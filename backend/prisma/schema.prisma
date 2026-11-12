@@ -302,6 +302,10 @@ model Company {
   @@map("companies")
   generalAverageEvents        GeneralAverageEvent[]
   generalAverageContributors  GeneralAverageContributor[]
+
+  // Field records: safety incidents and trip document packs
+  safetyIncidents            SafetyIncident[]
+  tripDocuments              TripDocument[]
 }
 
 // ─── Integration credentials (per-tenant, encrypted) ────────────────────────
@@ -7853,4 +7857,92 @@ model GeneralAverageContributor {
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+/// A safety or security incident reported in the field, with the verification
+/// trail behind it.
+///
+/// Two pages depend on this table and neither could work without it: drivers
+/// report incidents, and dispatch verifies or rejects them. Both have been
+/// calling /safety-incidents against an endpoint that did not exist.
+///
+/// The verification fields (verified*, rejected*) are deliberately duplicated
+/// per outcome rather than collapsed into one status plus a user. An incident
+/// that is rejected and then re-verified has to show who did which, and when;
+/// a single last-actor column would silently erase the first decision.
+model SafetyIncident {
+  id                String   @id @default(cuid())
+  companyId         String
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  type              String
+  severity          String   // LOW | MEDIUM | HIGH | CRITICAL
+  status            String   @default("REPORTED") // REPORTED | CORROBORATED | VERIFIED | REJECTED | WITHDRAWN
+
+  reportedByDriverId String?
+  reportedByUserId   String?
+  reportedAt         DateTime @default(now())
+  reportLat          Float
+  reportLng          Float
+  locationSource     String   // GPS | MANUAL | LAST_KNOWN
+  geohash6           String?
+  narrative          String?
+
+  /// The safety zone this happened in, when the report falls inside one. Not a
+  /// relation: an incident outlives the zone it was reported against, and a
+  /// cascade delete here would destroy the record of what happened.
+  zoneId            String?
+
+  verifiedByUserId  String?
+  verifiedAt        DateTime?
+  rejectedByUserId  String?
+  rejectedAt        DateTime?
+  rejectionReason   String?
+
+  /// How many drivers were warned. Zero is a meaningful value: an incident can
+  /// be verified before anyone is in range of it.
+  broadcastCount    Int      @default(0)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([companyId, reportedAt])
+  @@map("safety_incidents")
+}
+
+/// A document carried against a cross-border trip: HS code, certificate of
+/// origin, duty estimate and actual, declaration reference.
+///
+/// DUTY_ESTIMATE and DUTY_ACTUAL are separate rows rather than two columns on
+/// one row, so the estimate is never overwritten by the actual and the variance
+/// between them stays auditable — the same reason trip-leg.service refuses to
+/// blend them.
+model TripDocument {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  /// The trip this document belongs to. Stored as a plain column: a document
+  /// pack is evidence and must survive the trip record being archived.
+  tripId         String
+
+  documentType   String   // HS_ORIGIN | CERTIFICATE_OF_ORIGIN | DUTY_ESTIMATE | DUTY_ACTUAL | DECLARATION | OTHER
+  documentRef    String?
+  hsCode         String?
+  originStatus   String?  // PREFERENTIAL | NON_PREFERENTIAL | UNKNOWN
+  dutyEstimated  Float?
+  dutyActual     Float?
+  declarationRef String?
+
+  capturedBy     String?
+  capturedAt     DateTime?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([companyId, tripId])
+  @@map("trip_documents")
 }

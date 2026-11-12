@@ -420,7 +420,7 @@ export default function AppLayout() {
     { section: "RAIL", label: "Coverage & Gaps", desc: "Which of the 49 annexures are built, and what each gap blocks", to: "/rail/coverage", icon: ClipboardCheck, perm: "rail", entitlement: "rail" },
     { section: "OPS", label: "Freight Forwarding", desc: "Import/export shipments (Enterprise)", to: "/forwarding", icon: Ship, adminOnly: true, entitlement: "freightForwarding" },
     { section: "OPS", label: "SARS EDI Setup", desc: "Customs transmission config", to: "/forwarding/sars-edi", icon: Globe, adminOnly: true, entitlement: "freightForwarding" },
-    { section: "OPS", label: "Border Dwell", desc: "Border dwell sessions & dwell monitoring", to: "/border-dwell", icon: MapPin },
+    { section: "OPS", label: "Border Dwell", desc: "Border dwell sessions & dwell monitoring", to: "/border-dwell", icon: MapPin, perm: "borderDwell" },
     // Claims are operational before they are financial: the person who sees the
     // damage raises the claim, finance decides it. Gated on `claims`, which the
     // role matrix grants to ADMIN, COMPANY_ADMIN, MANAGER, DISPATCH, WAREHOUSE
@@ -430,9 +430,9 @@ export default function AppLayout() {
     // machine raises the card, the workshop completes it, the custodian signs
     // it off. Gated on `maintenance`, the same roles the API accepts.
     { section: "OPS", label: "Asset Maintenance", desc: "Units, job cards & warranty", to: "/maintenance", icon: Wrench, perm: "maintenance" },
-    { section: "OPS", label: "Safety Incident Dispatch", desc: "Review & verify safety incidents", to: "/safety-incident-dispatch", icon: ShieldAlert },
-    { section: "OPS", label: "Safety Incident Report", desc: "Report a new safety incident", to: "/safety-incident-report", icon: AlertTriangle },
-    { section: "OPS", label: "Trip Document Pack", desc: "HS code, origin & duty records", to: "/trip-document-pack", icon: FileText },
+    { section: "OPS", label: "Safety Incident Dispatch", desc: "Review & verify safety incidents", to: "/safety-incident-dispatch", icon: ShieldAlert, perm: "safetyIncidents" },
+    { section: "OPS", label: "Safety Incident Report", desc: "Report a new safety incident", to: "/safety-incident-report", icon: AlertTriangle, perm: "safetyIncidents" },
+    { section: "OPS", label: "Trip Document Pack", desc: "HS code, origin & duty records", to: "/trip-document-pack", icon: FileText, perm: "tripDocuments" },
 
     { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle, perm: "whatsapp", entitlement: "whatsapp" },
     { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail, perm: "email", entitlement: "emailHub" },
@@ -476,9 +476,9 @@ export default function AppLayout() {
     { section: "AI", label: "Ask FlowOps",              desc: "AI copilot — analytics Q&A",   to: "/ask",              icon: Bot,         perm: "copilot", entitlement: "copilot"          },
     { section: "AI", label: "CLAW Autopilot",           desc: "Autonomous operations (Enterprise)", to: "/autopilot",  icon: Bot,         perm: "aiControlTower", entitlement: "clawAutopilot"   },
     { section: "AI", label: "AI Support Agent",         desc: "Product help + live data (Enterprise)", to: "/support", icon: LifeBuoy, entitlement: "aiSupportAgent" },
-    { section: "AI", label: "Fleet Intelligence",        desc: "Network balancing & demand AI",  to: "/fleet-intelligence", icon: Brain },
-    { section: "AI", label: "Safety Zones",             desc: "Crime hotspot alerts for drivers", to: "/safety-zones", icon: ShieldAlert },
-    { section: "AI", label: "Trip Corridor Split",      desc: "Trip legs, HS code, origin & duty", to: "/trip-legs", icon: Route },
+    { section: "AI", label: "Fleet Intelligence",        desc: "Network balancing & demand AI",  to: "/fleet-intelligence", icon: Brain, perm: "fleetIntelligence" },
+    { section: "AI", label: "Safety Zones",             desc: "Crime hotspot alerts for drivers", to: "/safety-zones", icon: ShieldAlert, perm: "safetyZones" },
+    { section: "AI", label: "Trip Corridor Split",      desc: "Trip legs, HS code, origin & duty", to: "/trip-legs", icon: Route, perm: "tripLegs" },
     { section: "AI", label: "High Risk Queue",          desc: "Exception management",         to: "/high-risk-queue",  icon: ShieldAlert, perm: "risksExceptions"  },
 
     { section: "ADMIN", label: "Admin Home", desc: "Tenant manager landing", to: "/admin", icon: LayoutDashboard, adminOnly: true },

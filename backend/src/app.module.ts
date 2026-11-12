@@ -87,6 +87,8 @@ import { FleetIntelligenceModule } from './fleet-intelligence/fleet-intelligence
 import { FleetMaintenanceModule } from './fleet-maintenance/fleet-maintenance.module';
 import { DriverSafetyModule } from './driver-safety/driver-safety.module';
 import { TripLegModule } from './driver-safety/trip-leg.module';
+import { BorderDwellModule } from './driver-safety/border-dwell.module';
+import { FieldRecordsModule } from './driver-safety/field-records.module';
 import { LogisticsOpsModule } from './logistics-ops/logistics-ops.module';
 import { CarbonModule } from './carbon/carbon.module';
 import { RouteOptimizationModule } from './route-optimization/route-optimization.module';
@@ -189,6 +191,8 @@ import { GeneralAverageModule } from './general-average/general-average.module';
     FleetMaintenanceModule,
     DriverSafetyModule,
     TripLegModule,
+    BorderDwellModule,
+    FieldRecordsModule,
     LogisticsOpsModule,
     CarbonModule,
 

@@ -3,7 +3,7 @@
 // node:fs fails the TypeScript check even though vitest runs it happily.
 import appSource from "../App.tsx?raw";
 import layoutSource from "../components/layout/AppLayout.tsx?raw";
-import permsSource from "./tenantUserPermissions.ts?raw";
+import { ALL_TENANT_NAV_PERMISSION_KEYS } from "./tenantUserPermissions";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -123,11 +123,13 @@ describe("route/sidebar permission parity", () => {
     // A perm the matrix does not define is always falsy, so it fails closed for
     // every role — including admins. This catches a typo that would otherwise
     // read as a working gate.
-    const union = permsSource.slice(
-      permsSource.indexOf("export type TenantNavPermissionKey ="),
-      permsSource.indexOf("export type TenantNavPermissions"),
-    );
-    const known = new Set([...union.matchAll(/"([a-zA-Z]+)"/g)].map((m) => m[1]));
+    //
+    // The key set is read from the live module rather than sliced out of the
+    // type union's source text: the union is now derived from the permission
+    // registry, so its source no longer contains a list of quoted keys to
+    // scrape. Reading the value also keeps this honest if the union and the
+    // runtime list ever stop being the same thing.
+    const known = new Set<string>(ALL_TENANT_NAV_PERMISSION_KEYS);
     expect(known.size).toBeGreaterThan(20);
 
     const unknown = new Set<string>();
