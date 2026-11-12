@@ -28,7 +28,7 @@
     "migrations:test": "node --test scripts/migrations.test.mjs",
     "migrations:rehearsal:test": "node --test scripts/migrate-rehearsal.test.mjs",
     "migrations:rehearse": "node scripts/migrate-rehearsal.mjs",
-    "release:safety:test": "node --test scripts/entitlement-audit.test.mjs scripts/migrate-rehearsal.test.mjs scripts/release-startup.test.mjs scripts/rbac-inventory.test.mjs scripts/compose-env-allowlist.test.mjs scripts/body-any-audit.test.mjs scripts/deploy-rbac-guard.test.mjs scripts/tenant-scope-audit.test.mjs scripts/tenant-context-coverage.test.mjs scripts/manual-coverage.test.mjs scripts/state-transition-audit.test.mjs",
+    "release:safety:test": "node --test scripts/entitlement-audit.test.mjs scripts/migrate-rehearsal.test.mjs scripts/release-startup.test.mjs scripts/rbac-inventory.test.mjs scripts/compose-env-allowlist.test.mjs scripts/compose-env-sweep.test.mjs scripts/body-any-audit.test.mjs scripts/deploy-rbac-guard.test.mjs scripts/tenant-scope-audit.test.mjs scripts/tenant-context-coverage.test.mjs scripts/manual-coverage.test.mjs scripts/state-transition-audit.test.mjs",
     "deploy-guard:test": "node --test scripts/deploy-rbac-guard.test.mjs",
     "manual:coverage": "node --test scripts/manual-coverage.test.mjs",
     "state-transitions:audit": "node scripts/state-transition-audit.mjs",
