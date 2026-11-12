@@ -1,0 +1,31 @@
+{
+  "_comment": [
+    "A @Body() that is intentionally left unvalidated, with the reason.",
+    "",
+    "Keyed by controller file -> handler method name. Empty object = exempt nothing.",
+    "",
+    "The only legitimate entries are webhook receivers. Their trust boundary is",
+    "an HMAC signature over the RAW body, verified before the payload is read.",
+    "Putting a validating DTO in front of one would reject every field the",
+    "provider adds later -- a silent integration outage -- and would move the",
+    "check from 'is this signed by Shopify' to 'does this match our guess about",
+    "Shopify'. The signature is the gate; the shape is not.",
+    "",
+    "An entry that stops matching anything is reported as a stale exemption and",
+    "fails the run, exactly like an increase in the count would.",
+    "",
+    "NEVER add a non-webhook handler here. If a body is unvalidated and not",
+    "signed by an external provider, it does not belong on this list -- give it",
+    "a DTO."
+  ],
+  "ecommerce/ecommerce.controller.ts": {
+    "shopifyWebhook": "Shopify order webhook. HMAC-SHA256 over req.rawBody verified against the tenant's shared secret before processShopifyOrder sees it. Shopify owns the schema.",
+    "woocommerceWebhook": "WooCommerce webhook. HMAC verified over req.rawBody against the tenant secret before use. WooCommerce owns the schema."
+  },
+  "whatsapp/whatsapp.controller.ts": {
+    "handleWebhook": "Meta Cloud API webhook. x-hub-signature-256 verified over req.rawBody before the payload is read. Meta owns the schema."
+  },
+  "paystack/paystack.controller.ts": {
+    "handleWebhook": "Paystack webhook. HMAC-SHA512 over req.rawBody, plus a source-IP allowlist, before the event is dispatched. Paystack owns the schema."
+  }
+}

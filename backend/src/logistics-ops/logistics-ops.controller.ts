@@ -5,6 +5,7 @@ import { CurrentUser } from '../common/decorators/user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
+import { CreateAddressDto, UpdateAddressDto } from './dto/logistics-ops.dto';
 
 @ApiTags('Logistics Operations')
 @ApiBearerAuth()
@@ -82,14 +83,14 @@ export class LogisticsOpsController {
   /** POST /address-book — save a new address */
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Post('address-book')
-  createAddress(@CurrentUser() u: any, @Body() body: any) {
+  createAddress(@CurrentUser() u: any, @Body() body: CreateAddressDto) {
     return this.svc.createAddress(u.companyId, body);
   }
 
   /** PATCH /address-book/:id — update an address */
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Patch('address-book/:id')
-  updateAddress(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+  updateAddress(@Param('id') id: string, @CurrentUser() u: any, @Body() body: UpdateAddressDto) {
     return this.svc.updateAddress(id, u.companyId, body);
   }
 

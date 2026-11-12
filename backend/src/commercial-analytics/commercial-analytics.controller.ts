@@ -6,6 +6,7 @@ import { CurrentUser } from '../common/decorators/user.decorator';
 import { RequireFeature } from '../billing/require-feature.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
+import { UpdateCommercialConfigDto } from './dto/commercial-config.dto';
 const COMMERCIAL_READ_ROLES = [
   UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
   UserRole.VIEWER,
@@ -32,7 +33,7 @@ export class CommercialAnalyticsController {
   /** PATCH /commercial-analytics/config — update cost model */
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Patch('config')
-  updateConfig(@CurrentUser() u: any, @Body() dto: any) {
+  updateConfig(@CurrentUser() u: any, @Body() dto: UpdateCommercialConfigDto) {
     return this.svc.updateConfig(u.companyId, dto);
   }
 

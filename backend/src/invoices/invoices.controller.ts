@@ -4,6 +4,7 @@ import { InvoicesService } from './invoices.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
+import { CreateInvoiceDto, MarkInvoicePaidDto, UpdateInvoiceDto } from './dto/invoice.dto';
 
 const INVOICE_READ_ROLES = [
   UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
@@ -43,7 +44,7 @@ export class InvoicesController {
 
   @Post('invoices')
   @Roles(...INVOICE_WRITE_ROLES)
-  create(@CurrentUser() u: any, @Body() body: any) {
+  create(@CurrentUser() u: any, @Body() body: CreateInvoiceDto) {
     return this.svc.create(u.companyId, body);
   }
 
@@ -159,7 +160,7 @@ export class InvoicesController {
 
   @Patch('invoices/:id')
   @Roles(...INVOICE_WRITE_ROLES)
-  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: UpdateInvoiceDto) {
     return this.svc.update(id, u.companyId, body);
   }
 
@@ -182,7 +183,7 @@ export class InvoicesController {
   @Post('invoices/:id/mark-paid')
   @Roles(...INVOICE_WRITE_ROLES)
   @HttpCode(HttpStatus.OK)
-  markPaid(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+  markPaid(@Param('id') id: string, @CurrentUser() u: any, @Body() body: MarkInvoicePaidDto) {
     return this.svc.markPaid(id, u.companyId, {
       note: body?.note,
       paidBy: body?.paidBy,

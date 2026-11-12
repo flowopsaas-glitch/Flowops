@@ -4,6 +4,7 @@ import { ShipmentsService } from './shipments.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
+import { CreateShipmentDto, RecalculateRiskDto, UpdateShipmentDto } from './dto/shipment.dto';
 const SHIPMENT_READ_ROLES = [
   UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER,
   UserRole.DISPATCH, UserRole.WAREHOUSE, UserRole.AGENT,
@@ -38,7 +39,7 @@ export class ShipmentsController {
     UserRole.DISPATCH, UserRole.AGENT,
   )
   @Post('shipments')
-  create(@CurrentUser() u: any, @Body() body: any) {
+  create(@CurrentUser() u: any, @Body() body: CreateShipmentDto) {
     return this.svc.create(u.companyId, body);
   }
 
@@ -52,7 +53,7 @@ export class ShipmentsController {
     UserRole.DISPATCH, UserRole.AGENT,
   )
   @Patch('shipments/:id')
-  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: UpdateShipmentDto) {
     return this.svc.update(id, u.companyId, body);
   }
 
@@ -63,7 +64,7 @@ export class ShipmentsController {
 
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.DISPATCH)
   @Post('shipments-risk/recalculate')
-  recalculateRisk(@CurrentUser() u: any, @Body() body: any) {
+  recalculateRisk(@CurrentUser() u: any, @Body() body: RecalculateRiskDto) {
     return this.svc.recalculateRisk(u.companyId, body);
   }
 }

@@ -3,6 +3,7 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { AnyAuthenticated } from '../common/decorators/any-authenticated.decorator';
+import { UpdatePreferencesDto } from './dto/notification.dto';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
@@ -32,7 +33,7 @@ export class NotificationsController {
   }
 
   @Patch('me/notification-preferences')
-  updatePreferences(@CurrentUser() u: any, @Body() body: any) {
+  updatePreferences(@CurrentUser() u: any, @Body() body: UpdatePreferencesDto) {
     return this.svc.updatePreferences(u.id, body);
   }
 }

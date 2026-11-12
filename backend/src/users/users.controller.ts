@@ -6,6 +6,7 @@ import { UserRole } from '@prisma/client';
 import { UsersService } from './users.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 
 // Only company administrators may manage other users. Without these guards ANY
 // authenticated user (even VIEWER/DRIVER) could create, edit, delete, or
@@ -26,7 +27,7 @@ export class UsersController {
 
   @Post()
   @Roles(...USER_ADMIN_ROLES)
-  create(@CurrentUser() u: any, @Body() body: any) {
+  create(@CurrentUser() u: any, @Body() body: CreateUserDto) {
     return this.svc.create(u.companyId, body, u);
   }
 
@@ -38,7 +39,7 @@ export class UsersController {
 
   @Patch(':id')
   @Roles(...USER_ADMIN_ROLES)
-  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+  update(@Param('id') id: string, @CurrentUser() u: any, @Body() body: UpdateUserDto) {
     return this.svc.update(id, u.companyId, body, u);
   }
 

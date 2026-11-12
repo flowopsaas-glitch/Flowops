@@ -4,6 +4,7 @@ import { DriverSafetyService } from './driver-safety.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
+import { CreateSafetyZoneDto, UpdateSafetyZoneDto } from './dto/safety-zone.dto';
 
 @ApiTags('Driver Safety')
 @ApiBearerAuth()
@@ -26,14 +27,14 @@ export class DriverSafetyController {
   /** POST /safety/zones — create a new safety zone */
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Post('zones')
-  createZone(@CurrentUser() u: any, @Body() body: any) {
+  createZone(@CurrentUser() u: any, @Body() body: CreateSafetyZoneDto) {
     return this.svc.createZone(u.companyId, body);
   }
 
   /** PATCH /safety/zones/:id — update a safety zone */
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
   @Patch('zones/:id')
-  updateZone(@Param('id') id: string, @CurrentUser() u: any, @Body() body: any) {
+  updateZone(@Param('id') id: string, @CurrentUser() u: any, @Body() body: UpdateSafetyZoneDto) {
     return this.svc.updateZone(id, u.companyId, body);
   }
 

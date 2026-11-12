@@ -4,25 +4,34 @@
  *
  * WHY THIS EXISTS
  * ---------------
- * 170 `@Body()` parameters across the controllers are typed `any`. A TypeScript
- * `any` erases at runtime, so Nest's ValidationPipe has nothing to validate and
- * every field the client chooses to send arrives as-is. On its own that is a
- * mass-assignment risk; combined with `data: { ...dto }` it lets a client set
- * columns it should never control.
+ * A `@Body()` parameter typed `any` erases at runtime, so Nest's
+ * ValidationPipe has nothing to validate and every field a client chooses to
+ * send arrives as-is. On its own that is a mass-assignment risk; combined with
+ * `data: { ...dto }` it lets a client set columns it should never control.
  *
- * `src/common/pick-allowed.util.ts` was written for exactly this — its own
- * header says so — and is used by exactly one service. A utility that exists
- * and is not adopted is worse than no utility, because it reads as protection.
- *
- * Rewriting 170 call sites in one change is how you ship a regression. So this
- * script does what the compose allowlist guard does for env vars: it freezes
- * the current number and makes it impossible to grow.
+ * Rewriting every call site in one change is how you ship a regression, so this
+ * script does what the compose allowlist guard does for env vars: it freezes the
+ * current number and makes it impossible to grow.
  *
  *   - a file may DECREASE its count (that is a fix, and it is reported);
  *   - a file may not INCREASE it;
  *   - a NEW controller may not introduce any at all.
  *
  * Every decrease lowers the baseline permanently. The number only goes down.
+ *
+ * THE COUNT IS ZERO
+ * -----------------
+ * As of the 2026-11 cleanup it is 0 across 101 controllers, down from 72. What
+ * remains is four webhook receivers, deliberately exempt in
+ * body-any-exemptions.json: their trust boundary is an HMAC signature over the
+ * raw body, verified before the payload is read, and putting a validating DTO
+ * in front of one would break the integration the first time the provider adds
+ * a field.
+ *
+ * So the invariant this script now guards is not "no unvalidated bodies" but
+ * "no unvalidated bodies that are not on the exemption list, and no exemption
+ * that no longer matches anything". A stale exemption is reported as a
+ * regression and fails the run, exactly like an increase would.
  *
  * USAGE
  *   node scripts/body-any-audit.mjs            # report + rewrite the baseline
@@ -39,12 +48,50 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.join(HERE, '..', '..');
 const SRC = path.join(REPO_ROOT, 'backend', 'src');
 const BASELINE_FILE = path.join(HERE, 'body-any-baseline.json');
+const EXEMPTIONS_FILE = path.join(HERE, 'body-any-exemptions.json');
 
 /**
  * A `@Body()` decorator whose parameter is typed `any`.
  * Handles the multi-line form used by prettier-wrapped signatures.
  */
 const BODY_ANY = /@Body\([^)]*\)\s*([A-Za-z0-9_$]+)\s*:\s*any\b/g;
+
+/** A handler declaration at the two-space indent a controller method sits at. */
+const METHOD = /^ {2}(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(/;
+
+/**
+ * The controller method a match falls inside, found by walking backwards for
+ * the nearest two-space-indented declaration. Prettier wraps long parameter
+ * lists, so the method name is often several lines above the `@Body()` it owns.
+ */
+function enclosingMethod(src, index) {
+  const lines = src.slice(0, index).split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = METHOD.exec(lines[i]);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/**
+ * Bodies that are deliberately unvalidated — see body-any-exemptions.json.
+ *
+ * Only webhook receivers belong there: their gate is an HMAC over the raw
+ * body, verified before the payload is read, and a validating DTO would reject
+ * whatever the provider adds to its schema next.
+ */
+export function loadExemptions(file = EXEMPTIONS_FILE) {
+  try {
+    const raw = JSON.parse(readFileSync(file, 'utf8'));
+    const out = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (!k.startsWith('_')) out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
 
 function controllers(dir, out = []) {
   for (const entry of readdirSync(dir)) {
@@ -55,15 +102,44 @@ function controllers(dir, out = []) {
   return out;
 }
 
-/** @returns {Record<string, number>} relative path -> count of `@Body(): any` */
-export function scan(root = SRC) {
+/**
+ * @returns {{counts: Record<string, number>, exempt: string[], stale: string[]}}
+ *   counts  — `@Body(): any` that still needs a DTO, per controller
+ *   exempt  — `file#method` entries that are exempted and actually match
+ *   stale   — exempted entries that match nothing, which is a maintenance bug
+ */
+export function scan(root = SRC, exemptions = loadExemptions()) {
   const counts = {};
+  const exempt = [];
+  const matched = new Set();
+
   for (const file of controllers(root).sort()) {
     const src = readFileSync(file, 'utf8');
-    const hits = [...src.matchAll(BODY_ANY)];
-    counts[path.relative(root, file).split(path.sep).join('/')] = hits.length;
+    const rel = path.relative(root, file).split(path.sep).join('/');
+    const allowed = exemptions[rel] ?? {};
+    let unexempted = 0;
+
+    for (const hit of src.matchAll(BODY_ANY)) {
+      const method = enclosingMethod(src, hit.index);
+      if (method && Object.prototype.hasOwnProperty.call(allowed, method)) {
+        matched.add(`${rel}#${method}`);
+        exempt.push(`${rel}#${method}`);
+      } else {
+        unexempted += 1;
+      }
+    }
+
+    counts[rel] = unexempted;
   }
-  return counts;
+
+  const stale = [];
+  for (const [file, methods] of Object.entries(exemptions)) {
+    for (const method of Object.keys(methods)) {
+      if (!matched.has(`${file}#${method}`)) stale.push(`${file}#${method}`);
+    }
+  }
+
+  return { counts, exempt, stale };
 }
 
 export function loadBaseline(file = BASELINE_FILE) {
@@ -78,9 +154,15 @@ export function loadBaseline(file = BASELINE_FILE) {
  * Compare a scan against the baseline.
  * @returns {{ok: boolean, regressions: string[], improvements: string[]}}
  */
-export function compare(counts, baseline = loadBaseline()) {
+export function compare(counts, baseline = loadBaseline(), stale = []) {
   const regressions = [];
   const improvements = [];
+
+  // An exemption that matches nothing is either a renamed handler or a body
+  // that got a DTO after all. Either way the file is wrong and must be fixed.
+  for (const entry of stale) {
+    regressions.push(`${entry}: exemption matches no @Body(): any — remove it from body-any-exemptions.json`);
+  }
 
   for (const [file, count] of Object.entries(counts)) {
     const before = baseline[file];
@@ -114,11 +196,15 @@ function main() {
   const init = args.includes('--init');
   const json = args.includes('--format') && args[args.indexOf('--format') + 1] === 'json';
 
-  const counts = scan();
+  const { counts, exempt, stale } = scan();
   // --init seeds the ratchet deliberately. Without it a missing baseline would
   // re-freeze whatever the count happened to be, which is how a guard quietly
   // certifies the very thing it was built to prevent.
-  const { ok, regressions, improvements } = compare(counts, init ? counts : loadBaseline());
+  const { ok, regressions, improvements } = compare(
+    counts,
+    init ? counts : loadBaseline(),
+    stale,
+  );
   const t = totals(counts);
 
   if (json) {
@@ -128,6 +214,7 @@ function main() {
       `unvalidated @Body(): ${t.total} across ${t.offending}/${t.files} controllers\n`,
     );
     for (const i of improvements) process.stdout.write(`  improved  ${i}\n`);
+    for (const e of exempt) process.stdout.write(`  exempt    ${e} (signed webhook body)\n`);
     for (const r of regressions) process.stdout.write(`  REGRESSION  ${r}\n`);
     process.stdout.write(
       ok

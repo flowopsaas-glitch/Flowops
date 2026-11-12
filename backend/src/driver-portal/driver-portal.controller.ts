@@ -10,6 +10,7 @@ import type { DriverMode } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole, TruckWindowAckSource } from '@prisma/client';
 import { RailTruckWindowChangesService } from '../rail/rail-truck-window-changes.service';
+import { LogDriverCostDto } from './dto/driver-portal.dto';
 
 /** Real client IP behind Cloudflare -> nginx -> Docker (see auth.controller). */
 function clientIp(req: any): string | undefined {
@@ -233,7 +234,7 @@ export class DriverPortalController {
   @Public()
   @UseGuards(DriverAuthGuard)
   @Post('costs')
-  logCost(@Req() req: any, @Body() body: any) {
+  logCost(@Req() req: any, @Body() body: LogDriverCostDto) {
     return this.svc.logDriverCost(req.driver.id, req.driver.companyId, body ?? {});
   }
 

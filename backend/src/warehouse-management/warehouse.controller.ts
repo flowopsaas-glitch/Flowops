@@ -2,6 +2,24 @@ import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { WarehouseManagementService } from './warehouse-management.service';
 import { WarehouseAnalyticsService } from './warehouse-analytics.service';
+import {
+  AdjustStockDto,
+  AssignPickerDto,
+  BulkCreateBinsDto,
+  ConfirmPickDto,
+  CreateBinDto,
+  CreateCrossDockDto,
+  CreateCycleCountDto,
+  CreateGoodsReceiptDto,
+  CreatePickOrderDto,
+  CreateWarehouseDto,
+  CreateWaveDto,
+  CreateZoneDto,
+  ReceiveGoodsDto,
+  SubmitCycleCountDto,
+  TransferStockDto,
+  VerifyScanDto,
+} from './dto/warehouse.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -53,7 +71,7 @@ export class WarehouseController {
 
   @Roles(...WMS_STRUCTURE_ROLES)
   @Post('warehouses')
-  createWarehouse(@CurrentUser() u: any, @Body() dto: any) {
+  createWarehouse(@CurrentUser() u: any, @Body() dto: CreateWarehouseDto) {
     return this.wms.createWarehouse(u.companyId, dto);
   }
 
@@ -66,19 +84,19 @@ export class WarehouseController {
   // ── Zones & Bins ───────────────────────────────────────────────────────
   @Roles(...WMS_STRUCTURE_ROLES)
   @Post('warehouses/:id/zones')
-  createZone(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: any) {
+  createZone(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: CreateZoneDto) {
     return this.wms.createZone(id, u.companyId, dto);
   }
 
   @Roles(...WMS_STRUCTURE_ROLES)
   @Post('zones/:zoneId/bins')
-  createBin(@CurrentUser() u: any, @Param('zoneId') zoneId: string, @Body() dto: any) {
+  createBin(@CurrentUser() u: any, @Param('zoneId') zoneId: string, @Body() dto: CreateBinDto) {
     return this.wms.createBin(zoneId, u.companyId, dto);
   }
 
   @Roles(...WMS_STRUCTURE_ROLES)
   @Post('zones/:zoneId/bins/bulk')
-  bulkCreateBins(@CurrentUser() u: any, @Param('zoneId') zoneId: string, @Body() dto: any) {
+  bulkCreateBins(@CurrentUser() u: any, @Param('zoneId') zoneId: string, @Body() dto: BulkCreateBinsDto) {
     return this.wms.bulkCreateBins(zoneId, u.companyId, dto);
   }
 
@@ -95,13 +113,13 @@ export class WarehouseController {
 
   @Roles(...WMS_OPERATION_ROLES)
   @Post('inventory/adjust')
-  adjustStock(@CurrentUser() u: any, @Body() dto: any) {
+  adjustStock(@CurrentUser() u: any, @Body() dto: AdjustStockDto) {
     return this.wms.adjustStock(u.companyId, { ...dto, performedBy: u.id });
   }
 
   @Roles(...WMS_OPERATION_ROLES)
   @Post('inventory/transfer')
-  transferStock(@CurrentUser() u: any, @Body() dto: any) {
+  transferStock(@CurrentUser() u: any, @Body() dto: TransferStockDto) {
     return this.wms.transferStock(u.companyId, { ...dto, performedBy: u.id });
   }
 
@@ -120,13 +138,13 @@ export class WarehouseController {
   // ── Goods Receipt ──────────────────────────────────────────────────────
   @Roles(...WMS_OPERATION_ROLES)
   @Post('receipts')
-  createReceipt(@CurrentUser() u: any, @Body() dto: any) {
+  createReceipt(@CurrentUser() u: any, @Body() dto: CreateGoodsReceiptDto) {
     return this.wms.createGoodsReceipt(u.companyId, dto.warehouseId, dto);
   }
 
   @Roles(...WMS_OPERATION_ROLES)
   @Post('receipts/:id/receive')
-  receiveGoods(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: any) {
+  receiveGoods(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: ReceiveGoodsDto) {
     return this.wms.receiveGoods(id, u.companyId, { ...dto, receivedBy: u.id });
   }
 
@@ -134,32 +152,32 @@ export class WarehouseController {
   // ── Pick Orders ────────────────────────────────────────────────────────
   @Roles(...WMS_OPERATION_ROLES)
   @Post('picks')
-  createPickOrder(@CurrentUser() u: any, @Body() dto: any) {
+  createPickOrder(@CurrentUser() u: any, @Body() dto: CreatePickOrderDto) {
     return this.wms.createPickOrder(u.companyId, dto.warehouseId, dto);
   }
 
   @Roles(...WMS_OPERATION_ROLES)
   @Patch('picks/:id/assign')
-  assignPicker(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: any) {
+  assignPicker(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: AssignPickerDto) {
     return this.wms.assignPicker(id, u.companyId, dto.userId || u.id);
   }
 
   @Roles(...WMS_OPERATION_ROLES)
   @Post('picks/:id/confirm')
-  confirmPick(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: any) {
+  confirmPick(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: ConfirmPickDto) {
     return this.wms.confirmPick(id, u.companyId, dto);
   }
 
   // ── Cycle Counts ───────────────────────────────────────────────────────
   @Roles(...WMS_OPERATION_ROLES)
   @Post('counts')
-  createCycleCount(@CurrentUser() u: any, @Body() dto: any) {
+  createCycleCount(@CurrentUser() u: any, @Body() dto: CreateCycleCountDto) {
     return this.wms.createCycleCount(u.companyId, dto.warehouseId, dto);
   }
 
   @Roles(...WMS_OPERATION_ROLES)
   @Post('counts/:id/submit')
-  submitCount(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: any) {
+  submitCount(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: SubmitCycleCountDto) {
     return this.wms.submitCycleCount(id, u.companyId, dto);
   }
 
@@ -180,7 +198,7 @@ export class WarehouseController {
   @Roles(...WMS_OPERATION_ROLES)
   @Post('cross-dock')
   @ApiOperation({ summary: 'Cross-dock: bypass storage — inbound goes direct to outbound destinations' })
-  createCrossDock(@CurrentUser() u: any, @Body() dto: any) {
+  createCrossDock(@CurrentUser() u: any, @Body() dto: CreateCrossDockDto) {
     return this.wms.createCrossDock(u.companyId, dto);
   }
 
@@ -189,7 +207,7 @@ export class WarehouseController {
   @Roles(...WMS_OPERATION_ROLES)
   @Post('waves')
   @ApiOperation({ summary: 'Create a pick wave — groups pending orders into efficient picker routes by zone' })
-  createWave(@CurrentUser() u: any, @Body() dto: any) {
+  createWave(@CurrentUser() u: any, @Body() dto: CreateWaveDto) {
     return this.wms.createWave(u.companyId, dto?.warehouseId, dto);
   }
 
@@ -206,7 +224,7 @@ export class WarehouseController {
   @Roles(...WMS_OPERATION_ROLES)
   @Post('scan/verify')
   @ApiOperation({ summary: 'Verify a barcode/QR scan — matches SKU, bin, GR, or pick order with context validation' })
-  verifyScan(@CurrentUser() u: any, @Body() dto: any) {
+  verifyScan(@CurrentUser() u: any, @Body() dto: VerifyScanDto) {
     return this.wms.verifyScan(u.companyId, dto);
   }
 }

@@ -8,6 +8,7 @@ import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RequireFeature } from '../billing/require-feature.decorator';
+import { CreateDisbursementDto, RecoverDisbursementDto, UpdateDisbursementDto } from './dto/disbursement.dto';
 
 const DISBURSEMENT_READ_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER, UserRole.VIEWER];
 const DISBURSEMENT_WRITE_ROLES = [UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER];
@@ -42,21 +43,21 @@ export class DisbursementsController {
   @Post()
   @Roles(...DISBURSEMENT_WRITE_ROLES)
   @ApiOperation({ summary: 'Record a disbursement paid on a client behalf' })
-  create(@CurrentUser() u: any, @Body() dto: any) {
+  create(@CurrentUser() u: any, @Body() dto: CreateDisbursementDto) {
     return this.disbursements.create(u.companyId, dto);
   }
 
   @Patch(':id')
   @Roles(...DISBURSEMENT_WRITE_ROLES)
   @ApiOperation({ summary: 'Update a disbursement' })
-  update(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: any) {
+  update(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: UpdateDisbursementDto) {
     return this.disbursements.update(u.companyId, id, dto);
   }
 
   @Post(':id/recover')
   @Roles(...DISBURSEMENT_WRITE_ROLES)
   @ApiOperation({ summary: 'Mark a disbursement recovered from the client' })
-  recover(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: any) {
+  recover(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: RecoverDisbursementDto) {
     return this.disbursements.markRecovered(u.companyId, id, dto?.invoiceId);
   }
 

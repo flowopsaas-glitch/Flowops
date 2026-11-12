@@ -7,6 +7,7 @@ import { CarriersService } from './carriers.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { AddCarrierRateDto, CreateCarrierDto, UpdateCarrierDto } from './dto/carrier.dto';
 
 @ApiTags('Carriers & Procurement')
 @ApiBearerAuth()
@@ -42,13 +43,13 @@ export class CarriersController {
 
   @Post()
   @ApiOperation({ summary: 'Create a carrier / vendor' })
-  create(@CurrentUser() u: any, @Body() dto: any) {
+  create(@CurrentUser() u: any, @Body() dto: CreateCarrierDto) {
     return this.carriers.create(u.companyId, dto);
   }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update a carrier' })
-  update(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: any) {
+  update(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: UpdateCarrierDto) {
     return this.carriers.update(u.companyId, id, dto);
   }
 
@@ -60,7 +61,7 @@ export class CarriersController {
 
   @Post(':id/rates')
   @ApiOperation({ summary: 'Add a buy-rate contract to a carrier' })
-  addRate(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: any) {
+  addRate(@CurrentUser() u: any, @Param('id') id: string, @Body() dto: AddCarrierRateDto) {
     return this.carriers.addRate(u.companyId, id, dto);
   }
 
