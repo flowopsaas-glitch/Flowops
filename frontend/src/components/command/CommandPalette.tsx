@@ -1,10 +1,25 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Search, Sparkles } from "lucide-react";
+import { Search, Sparkles, type LucideIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
-import type { NavItem } from "../../lib/nav";
+// Moved here from lib/nav.ts when that file was deleted: this is its only
+// consumer. It describes the palette's own item shape, not the sidebar's —
+// the two were never the same and the shared import implied they were.
+type NavItem = {
+  key: TenantNavPermissionKey;
+  name: string;
+  page: string;
+  path: string;
+  permissionKey: TenantNavPermissionKey;
+  icon: LucideIcon;
+  section: "CORE" | "BILLING" | "AI";
+  badge?: string;
+  description?: string;
+  hotkey?: string;
+};
 import api from "../../services/api";
 import { FLOWOPS_HTTP_ORIGIN } from "../../lib/env";
+import type { TenantNavPermissionKey } from "../../lib/tenantUserPermissions";
 
 type Props = {
   open: boolean;
