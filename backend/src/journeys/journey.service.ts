@@ -241,14 +241,17 @@ export class JourneyService {
         include: {
           stages: {
             orderBy: { stageNumber: 'asc' },
+            // Field names must match the model exactly: a `select` naming a
+            // column that does not exist is a type error under the real
+            // client, but not under the offline stub — so it would otherwise
+            // reach production and quietly evaluate to undefined.
             select: {
               id: true,
               stageNumber: true,
               type: true,
               locationName: true,
+              plannedAt: true,
               status: true,
-              plannedArrival: true,
-              actualArrival: true,
             },
           },
           _count: { select: { updates: true } },
