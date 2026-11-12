@@ -107,6 +107,10 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
       # Public URL used in email links (e.g. verify-email, password reset)
       APP_URL: ${APP_URL:-http://localhost:8080}
+      # Reported to Sentry as the release. Unset means every event is filed
+      # against an unknown version, which makes a regression impossible to
+      # tie back to a deploy. Set it in .env at release time.
+      APP_VERSION: ${APP_VERSION:-}
 
       # ── Security posture ──────────────────────────────────────────────
       # RBAC_STRICT makes RolesGuard reject (403) any route that carries no
@@ -203,6 +207,10 @@ services:
       # WITHOUT these reaching the container, all AI features silently fall back
       # — this block is why they work under compose (not just PM2-on-host).
       GROQ_API_KEY: ${GROQ_API_KEY:-}
+      # Model id. The code default is compiled in, so without this line the
+      # model can only be changed by rebuilding — and an upstream default
+      # change would silently move the whole AI surface.
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
 
       # ── AISStream (live vessel tracking — free WebSocket AIS feed) ────
@@ -238,11 +246,38 @@ services:
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
       MAPBOX_TOKEN: ${MAPBOX_TOKEN:-}
       DEFAULT_COUNTRY: ${DEFAULT_COUNTRY:-za}
+      # Road routing. Defaults to the public OSRM demo server, which is
+      # rate-limited and outside your network — point this at a self-hosted
+      # instance for production traffic.
+      OSRM_BASE_URL: ${OSRM_BASE_URL:-https://router.project-osrm.org}
 
       # ── Paystack plan codes + error tracking (optional) ───────────────
       PAYSTACK_PROFESSIONAL_PLAN_CODE: ${PAYSTACK_PROFESSIONAL_PLAN_CODE:-}
       PAYSTACK_ENTERPRISE_PLAN_CODE: ${PAYSTACK_ENTERPRISE_PLAN_CODE:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
+
+      # ── Operational policy switches ────────────────────────────────────
+      # These are read per request, on purpose: driver-compliance.service.ts
+      # says so — "read per call so a rollout decision does not need a
+      # redeploy on every node."
+      #
+      # That only works if the value reaches the container, and the api
+      # service passes through an explicit `environment:` allowlist with no
+      # `env_file:`. Until these lines existed, all four were set in .env,
+      # looked configured, and were silently dropped — the container kept the
+      # compiled-in default and no operator edit had any effect. That is the
+      # same failure that left production RBAC non-strict until a hand-edit
+      # on the host. scripts/compose-env-sweep.mjs now fails CI if a key the
+      # code reads is missing here.
+      #
+      # Every default below matches the in-code default exactly, so adding
+      # these lines changes nothing on its own — it only makes .env work.
+      DRIVER_REQUIRE_DOCUMENTS: ${DRIVER_REQUIRE_DOCUMENTS:-false}
+      MANIFEST_REQUIRE_HUB_RECEIVE: ${MANIFEST_REQUIRE_HUB_RECEIVE:-true}
+      WAYBILL_TRANSITION_MODE: ${WAYBILL_TRANSITION_MODE:-strict}
+      # Legacy boolean, still honoured ahead of WAYBILL_TRANSITION_MODE.
+      # Empty on purpose: blank means "not set", so the mode above decides.
+      WAYBILL_STRICT_TRANSITIONS: ${WAYBILL_STRICT_TRANSITIONS:-}
     depends_on:
       postgres:
         condition: service_healthy
