@@ -398,9 +398,9 @@ export default function App() {
               <Route path="/safety-zones" element={<RequirePermission perm="safetyZones"><SafetyZones /></RequirePermission>} />
               <Route path="/trip-legs" element={<RequirePermission perm="tripLegs"><TripLegsBoard /></RequirePermission>} />
               <Route path="/border-dwell" element={<RequirePermission perm="borderDwell"><BorderDwellBoard /></RequirePermission>} />
-              <Route path="/safety-incident-dispatch" element={<SafetyIncidentDispatch />} />
-              <Route path="/safety-incident-report" element={<SafetyIncidentReport />} />
-              <Route path="/trip-document-pack" element={<TripDocumentPack />} />
+              <Route path="/safety-incident-dispatch" element={<RequirePermission perm="safetyIncidents"><SafetyIncidentDispatch /></RequirePermission>} />
+              <Route path="/safety-incident-report" element={<RequirePermission perm="safetyIncidents"><SafetyIncidentReport /></RequirePermission>} />
+              <Route path="/trip-document-pack" element={<RequirePermission perm="tripDocuments"><TripDocumentPack /></RequirePermission>} />
               <Route
                 path="/transactions"
                 element={

@@ -158,7 +158,9 @@ test('the real tree: tenant tables come from the schema, and the scan is sane', 
   // 137 -> 138 on 2026-11-10: the rail network migration added one tenant model
   // (RailNetwork). Raise this only when models were genuinely added; a DROP
   // here means detection broke.
-  assert.equal(r.summary.tenantTables, 138);
+  // 138 -> 140 on 2026-11-14: the field-records migration added two tenant
+  // models (SafetyIncident, TripDocument).
+  assert.equal(r.summary.tenantTables, 140);
   assert.ok(r.summary.operations > 1000, `expected a large tree, got ${r.summary.operations}`);
   assert.equal(
     r.summary.contextualised + r.summary.bare + r.summary.exempt,

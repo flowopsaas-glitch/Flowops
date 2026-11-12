@@ -180,6 +180,20 @@ describe("permission registry", () => {
     ]);
   });
 
+  it("mirrors the backend role set for safety incidents", () => {
+    // backend: safety-incident.controller.ts — DRIVER may report, not review
+    expect(PERMISSION_REGISTRY.find((p) => p.key === "safetyIncidents")!.roles).toEqual([
+      "ADMIN", "COMPANY_ADMIN", "MANAGER", "DISPATCH", "WAREHOUSE", "DRIVER",
+    ]);
+  });
+
+  it("mirrors the backend role set for trip documents", () => {
+    // backend: trip-document.controller.ts
+    expect(PERMISSION_REGISTRY.find((p) => p.key === "tripDocuments")!.roles).toEqual([
+      "ADMIN", "COMPANY_ADMIN", "MANAGER", "DISPATCH", "WAREHOUSE",
+    ]);
+  });
+
   it("mirrors the backend role set for trip legs", () => {
     // backend: GET /trip-legs/trips (trip-leg.controller.ts) — DRIVER included
     expect(PERMISSION_REGISTRY.find((p) => p.key === "tripLegs")!.roles).toEqual([

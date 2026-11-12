@@ -430,9 +430,9 @@ export default function AppLayout() {
     // machine raises the card, the workshop completes it, the custodian signs
     // it off. Gated on `maintenance`, the same roles the API accepts.
     { section: "OPS", label: "Asset Maintenance", desc: "Units, job cards & warranty", to: "/maintenance", icon: Wrench, perm: "maintenance" },
-    { section: "OPS", label: "Safety Incident Dispatch", desc: "Review & verify safety incidents", to: "/safety-incident-dispatch", icon: ShieldAlert },
-    { section: "OPS", label: "Safety Incident Report", desc: "Report a new safety incident", to: "/safety-incident-report", icon: AlertTriangle },
-    { section: "OPS", label: "Trip Document Pack", desc: "HS code, origin & duty records", to: "/trip-document-pack", icon: FileText },
+    { section: "OPS", label: "Safety Incident Dispatch", desc: "Review & verify safety incidents", to: "/safety-incident-dispatch", icon: ShieldAlert, perm: "safetyIncidents" },
+    { section: "OPS", label: "Safety Incident Report", desc: "Report a new safety incident", to: "/safety-incident-report", icon: AlertTriangle, perm: "safetyIncidents" },
+    { section: "OPS", label: "Trip Document Pack", desc: "HS code, origin & duty records", to: "/trip-document-pack", icon: FileText, perm: "tripDocuments" },
 
     { section: "COMMUNICATIONS", label: "WhatsApp", desc: "Tactical messaging", to: "/whatsapp", icon: MessageCircle, perm: "whatsapp", entitlement: "whatsapp" },
     { section: "COMMUNICATIONS", label: "Email Hub", desc: "Unified inbox", to: "/email", icon: Mail, perm: "email", entitlement: "emailHub" },
