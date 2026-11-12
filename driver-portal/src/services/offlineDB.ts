@@ -16,6 +16,16 @@ export type Job = Record<string, any> & { id: string };
 /** A gate window as the driver's portal last saw it (cached for offline use). */
 export type CachedGateWindow = Record<string, any> & { appointmentId: string };
 
+/**
+ * A journey as the driver's portal last saw it.
+ *
+ * Cached because the single most likely moment a driver opens their journey is
+ * the moment they need to report a problem with it -- which correlates strongly
+ * with having no signal. A journey they cannot read is a journey they cannot
+ * report against.
+ */
+export type CachedJourney = Record<string, any> & { id: string };
+
 /** What the server said when it permanently refused a queued write. */
 export type MutationRejection = {
   status?: number;
@@ -30,7 +40,7 @@ export type MutationRejection = {
 /** A queued, not-yet-confirmed server write. */
 export type PendingMutation = {
   id: string;                 // client-generated uuid — also the idempotency key
-  kind: 'pod' | 'collect' | 'gps' | 'window-ack';
+  kind: 'pod' | 'collect' | 'gps' | 'window-ack' | 'journey-update';
   url: string;                // relative API path, e.g. /driver-portal/pod
   body: Record<string, any>;  // JSON payload
   createdAt: number;          // epoch ms — replay in FIFO order
@@ -52,6 +62,7 @@ class DriverDB extends Dexie {
   jobs!: Table<Job, string>;
   mutations!: Table<PendingMutation, string>;
   gateWindows!: Table<CachedGateWindow, string>;
+  journeys!: Table<CachedJourney, string>;
   constructor() {
     super('flowops-driver');
     // v1 — jobs cache only.
@@ -69,6 +80,15 @@ class DriverDB extends Dexie {
       jobs: 'id, status, type',
       mutations: 'id, kind, createdAt',
       gateWindows: 'appointmentId',
+    });
+    // v4 — cache the driver's journeys so the stage list and the update form
+    // still work in a notspot. Same reasoning as gate windows: this is the
+    // screen a driver reaches for precisely when something has gone wrong.
+    this.version(4).stores({
+      jobs: 'id, status, type',
+      mutations: 'id, kind, createdAt',
+      gateWindows: 'appointmentId',
+      journeys: 'id, status',
     });
   }
 }
@@ -97,11 +117,21 @@ export async function getCachedJobs(): Promise<Job[]> {
 
 // ── Outbox ────────────────────────────────────────────────────────────────────
 
-function uuid(): string {
+/**
+ * A client-generated id.
+ *
+ * Exported because a caller sometimes needs the SAME id in two places at once:
+ * a journey update carries its idempotency key in the body (that is what the
+ * backend dedupes on), and the outbox row that may later replay it has to
+ * reuse that exact value or the replay creates a second update.
+ */
+export function newId(): string {
   // crypto.randomUUID is available in all modern mobile browsers; fall back just in case.
   try { return crypto.randomUUID(); } catch { /* older webview */ }
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
+
+const uuid = newId;
 
 /** Queue a mutation for reliable delivery. Returns the mutation id (idempotency key). */
 export async function queueMutation(
@@ -121,6 +151,34 @@ export async function queueMutation(
   await db.mutations.put(m);
   await notifyMutationChange();
   return m.id;
+}
+
+/**
+ * Queue a write that supersedes any earlier copy of itself.
+ *
+ * For a value where only the LATEST matters — the driver's position being the
+ * obvious one. Queuing each GPS fix individually meant an hour in a notspot
+ * produced 120 outbox rows, all of them stale by the time they could be sent,
+ * and every one of them replayed in front of the driver's real work (POD,
+ * collections) when signal returned. Worse, the badge then claimed
+ * "120 to sync", which teaches a driver to distrust the badge.
+ *
+ * The existing row is updated in place rather than replaced, so its position in
+ * the FIFO queue — and therefore its ordering against everything else the
+ * driver did — is preserved.
+ */
+export async function queueCoalesced(
+  kind: PendingMutation['kind'],
+  url: string,
+  body: Record<string, any>,
+): Promise<string> {
+  const existing = (await getPendingMutations()).find((m) => m.kind === kind && m.url === url);
+  if (existing) {
+    await db.mutations.put({ ...existing, body, attempts: existing.attempts });
+    await notifyMutationChange();
+    return existing.id;
+  }
+  return queueMutation(kind, url, body);
 }
 
 const isPending = (m: PendingMutation) => (m.state ?? 'PENDING') === 'PENDING';
@@ -206,6 +264,20 @@ export async function cacheGateWindows(items: CachedGateWindow[]): Promise<void>
 
 export async function getCachedGateWindows(): Promise<CachedGateWindow[]> {
   try { return await db.gateWindows.toArray(); } catch { return []; }
+}
+
+// ── Journey cache ────────────────────────────────────────────────────────────
+export async function cacheJourneys(items: CachedJourney[]): Promise<void> {
+  try {
+    await db.transaction('rw', db.journeys, async () => {
+      await db.journeys.clear();
+      if (items.length) await db.journeys.bulkPut(items);
+    });
+  } catch { /* cache is best-effort */ }
+}
+
+export async function getCachedJourneys(): Promise<CachedJourney[]> {
+  try { return await db.journeys.toArray(); } catch { return []; }
 }
 
 // ── Outbox listeners ─────────────────────────────────────────────────────────

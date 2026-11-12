@@ -2,12 +2,12 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Truck, Package, MapPin, LogOut, RefreshCw, Navigation, Inbox,
-  ClipboardList, MessageCircle, Wifi, WifiOff, ChevronRight, ScanLine, Bell, BellOff, Fuel,
+  ClipboardList, MessageCircle, Wifi, WifiOff, ChevronRight, ScanLine, Bell, BellOff, Fuel, Route,
 } from 'lucide-react';
 import api from '../services/api';
 import { clearSession, getStoredDriver } from '../services/auth';
 import { useGeolocation } from '../hooks/useGeolocation';
-import { cacheJobs, getCachedJobs, queueMutation } from '../services/offlineDB';
+import { cacheJobs, getCachedJobs, queueCoalesced } from '../services/offlineDB';
 import { onPendingChange, flushOutbox } from '../services/syncEngine';
 import { enablePush, pushSupported, pushPermission } from '../services/push';
 // Gate windows are time-critical and small, so they are NOT lazy-loaded: a
@@ -77,14 +77,14 @@ export default function Dashboard() {
   useEffect(() => {
     if (geo.latitude != null && geo.longitude != null) {
       const body = { lat: geo.latitude, lng: geo.longitude, speed: geo.speed ?? 0 };
-      // GPS is high-frequency and only the latest fix matters, so we don't queue
-      // every ping when offline (that would flood the outbox). We only persist a
-      // ping locally when offline so the driver's last-known position still
-      // reaches dispatch once signal returns; live pings just fire-and-forget.
+      // Only the latest fix matters, so an offline ping COALESCES into the one
+      // queued row rather than appending. Queuing each fix individually meant an
+      // hour in a notspot produced 120 stale rows that all replayed ahead of the
+      // driver's real work, and a badge claiming "120 to sync".
       if (navigator.onLine) {
         api.post('/driver-portal/gps', body).catch(() => undefined);
       } else {
-        void queueMutation('gps', '/driver-portal/gps', body);
+        void queueCoalesced('gps', '/driver-portal/gps', body);
       }
     }
   }, [geo.latitude, geo.longitude, geo.speed]);
@@ -160,6 +160,9 @@ export default function Dashboard() {
             </button>
             <button onClick={() => navigate('/costs')} className="p-3 rounded-xl border border-white/10 hover:bg-white/10 transition" title="Log a cost (fuel or toll)">
               <Fuel className="w-5 h-5" />
+            </button>
+            <button onClick={() => navigate('/journeys')} className="p-3 rounded-xl border border-white/10 hover:bg-white/10 transition" title="My journeys">
+              <Route className="w-5 h-5 text-emerald-300" />
             </button>
             <button onClick={() => navigate('/chat')} className="p-3 rounded-xl border border-white/10 hover:bg-white/10 transition" title="Chat with dispatch">
               <MessageCircle className="w-5 h-5 text-blue-300" />

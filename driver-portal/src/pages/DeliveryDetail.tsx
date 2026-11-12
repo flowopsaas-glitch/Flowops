@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import { ArrowLeft, MapPin, Phone, Package, PenLine, Eraser, CheckCircle2, User } from 'lucide-react';
 import api from '../services/api';
-import { queueMutation } from '../services/offlineDB';
+import { cacheJobs, getCachedJobs, queueMutation } from '../services/offlineDB';
 import PhotoCapture from '../components/PhotoCapture';
 
 /**
@@ -24,10 +24,46 @@ export default function DeliveryDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
   const location = useLocation();
-  const job = (location.state as Job) || { id };
+
+  /**
+   * Router state does not survive a reload, and `|| { id }` used to paper over
+   * that with an empty object. The cost was not an empty screen: `isDelivery`
+   * is derived from `job.waybillId`, so a refreshed DELIVERY fell through to
+   * the collection branch and offered the driver a "Confirm Pickup" button for
+   * a parcel they were there to drop.
+   *
+   * So the job is recovered properly — cached copy first, then the list — and
+   * the screen refuses to guess while it does not know what it is showing.
+   */
+  const [job, setJob] = useState<Job | null>((location.state as Job) ?? null);
+  const [resolving, setResolving] = useState(!location.state);
+  const [unavailable, setUnavailable] = useState(false);
+
+  useEffect(() => {
+    if (job || !id) return;
+    let cancelled = false;
+    (async () => {
+      const cached = (await getCachedJobs()).find((j) => j.id === id) as Job | undefined;
+      if (cached && !cancelled) { setJob(cached); setResolving(false); return; }
+      try {
+        const list = await api.get<Job[]>('/driver-portal/deliveries');
+        const all = Array.isArray(list) ? list : [];
+        if (cancelled) return;
+        void cacheJobs(all);
+        const found = all.find((j) => j.id === id) ?? null;
+        setJob(found);
+        setUnavailable(!found);
+      } catch {
+        if (!cancelled) setUnavailable(true);
+      } finally {
+        if (!cancelled) setResolving(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id, job]);
 
   const sigRef = useRef<SignatureCanvas>(null);
-  const [recipientName, setRecipientName] = useState(job.recipientName ?? job.receiverName ?? '');
+  const [recipientName, setRecipientName] = useState(job?.recipientName ?? job?.receiverName ?? '');
   const [notes, setNotes] = useState('');
   const [photo, setPhoto] = useState<string | null>(null);
   const [parcelCount, setParcelCount] = useState(1);
@@ -35,6 +71,54 @@ export default function DeliveryDetail() {
   const [done, setDone] = useState(false);
   const [queued, setQueued] = useState(false);
   const [error, setError] = useState('');
+
+  // Fill the name in once the job resolves, without clobbering what the driver
+  // has already typed.
+  useEffect(() => {
+    if (job && !recipientName) setRecipientName(job.recipientName ?? job.receiverName ?? '');
+  }, [job, recipientName]);
+
+  // Never render a form for a job we have not identified. This is the fix for
+  // the collection-form-on-a-delivery bug: rather than deriving the branch from
+  // half-known data, we wait until we know which kind of job this is.
+  if (resolving) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white safe-area-top safe-area-bottom">
+        <div className="sticky top-0 z-10 backdrop-blur-xl bg-white/5 border-b border-white/10 p-4 flex items-center gap-3">
+          <button onClick={() => navigate(-1)} className="p-2 rounded-xl border border-white/10 hover:bg-white/10">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="font-bold">Loading…</div>
+        </div>
+        <div className="text-center py-16 text-gray-400">
+          <div className="w-8 h-8 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin mx-auto mb-2" />
+          Loading job…
+        </div>
+      </div>
+    );
+  }
+
+  if (!job || unavailable) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white safe-area-top safe-area-bottom">
+        <div className="sticky top-0 z-10 backdrop-blur-xl bg-white/5 border-b border-white/10 p-4 flex items-center gap-3">
+          <button onClick={() => navigate(-1)} className="p-2 rounded-xl border border-white/10 hover:bg-white/10">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="font-bold">Job</div>
+        </div>
+        <div className="p-4">
+          <div className="text-center py-16 bg-white/5 border border-white/10 rounded-2xl">
+            <Package className="w-10 h-10 text-gray-500 mx-auto mb-2" />
+            <p className="text-gray-400">This job is no longer on your list.</p>
+            <button onClick={() => navigate('/dashboard')} className="mt-3 text-sm text-blue-300 underline">
+              Back to my jobs
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const isDelivery = !!job.waybillId && job.type !== 'collection';
   const isLinehaul = job.type === 'linehaul';
