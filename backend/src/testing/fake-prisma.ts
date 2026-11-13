@@ -38,6 +38,17 @@ const NESTED_CREATES: Record<string, Record<string, { model: string; fk: string 
   processInstance: {
     stepInstances: { model: 'processStepInstance', fk: 'instanceId' },
   },
+  shipmentFile: {
+    containers: { model: 'shipmentContainer', fk: 'fileId' },
+    cargo: { model: 'cargoLine', fk: 'fileId' },
+    charges: { model: 'shipmentCharge', fk: 'fileId' },
+    documents: { model: 'shipmentDocument', fk: 'fileId' },
+    milestones: { model: 'shipmentMilestone', fk: 'fileId' },
+    declarations: { model: 'customsDeclaration', fk: 'fileId' },
+  },
+  customsDeclaration: {
+    ediMessages: { model: 'customsEdiMessage', fk: 'declarationId' },
+  },
 };
 
 /**
@@ -58,6 +69,8 @@ const MODEL_DEFAULTS: Record<string, Row> = {
   product: { status: 'DRAFT', revision: 1, isActive: true, unitOfMeasure: 'EA' },
   productVariant: { status: 'DRAFT', revision: 1, isActive: true },
   productAlias: { isActive: true },
+  shipmentFile: { status: 'DRAFT', isMaster: false },
+  customsDeclaration: { status: 'DRAFT' },
 };
 
 const MODEL_NAMES = [
@@ -78,6 +91,16 @@ const MODEL_NAMES = [
   'productAlias',
   'masterDataAuditEvent',
   'goodsReceipt',
+  'shipmentFile',
+  'shipmentContainer',
+  'cargoLine',
+  'shipmentCharge',
+  'shipmentDocument',
+  'shipmentMilestone',
+  'customsDeclaration',
+  'customsEdiMessage',
+  'collection',
+  'aiEvent',
 ] as const;
 
 export class FakePrisma {
@@ -185,6 +208,16 @@ export class FakePrisma {
       async findUnique(args: { where: any; include?: any; select?: any }) {
         const row = table.find((r) => matches(r, args.where)) ?? null;
         return row ? withIncludes(name, row, args.include, self) : null;
+      },
+      /** Mirrors Prisma: `findFirst` that rejects instead of returning null. */
+      async findFirstOrThrow(args?: { where?: any; include?: any; orderBy?: any; select?: any }) {
+        const where = args?.where;
+        if (where) self.queriedWhereClauses.push({ model: name, where });
+        const rows = table.filter((r) => matches(r, where));
+        const sorted = applyOrder(rows, args?.orderBy);
+        const row = sorted[0] ?? null;
+        if (!row) throw new Error(`No ${name} found`);
+        return withIncludes(name, row, args?.include, self);
       },
       async findMany(args?: { where?: any; orderBy?: any; take?: number; include?: any; select?: any }) {
         const where = args?.where;
@@ -304,6 +337,36 @@ export class FakePrisma {
   }
   get goodsReceipt() {
     return this.modelFor('goodsReceipt', this);
+  }
+  get shipmentFile() {
+    return this.modelFor('shipmentFile', this);
+  }
+  get shipmentContainer() {
+    return this.modelFor('shipmentContainer', this);
+  }
+  get cargoLine() {
+    return this.modelFor('cargoLine', this);
+  }
+  get shipmentCharge() {
+    return this.modelFor('shipmentCharge', this);
+  }
+  get shipmentDocument() {
+    return this.modelFor('shipmentDocument', this);
+  }
+  get shipmentMilestone() {
+    return this.modelFor('shipmentMilestone', this);
+  }
+  get customsDeclaration() {
+    return this.modelFor('customsDeclaration', this);
+  }
+  get customsEdiMessage() {
+    return this.modelFor('customsEdiMessage', this);
+  }
+  get collection() {
+    return this.modelFor('collection', this);
+  }
+  get aiEvent() {
+    return this.modelFor('aiEvent', this);
   }
 
   private transactionQueue: Promise<void> = Promise.resolve();
