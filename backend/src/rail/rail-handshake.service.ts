@@ -1,5 +1,5 @@
 import {
-  BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException,
+  BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
@@ -313,9 +313,20 @@ export class RailHandshakeService {
       throw new BadRequestException('Only a DRAFT report can be issued for review.');
     }
     const issued = await this.prisma.withTenant(companyId, async (tx) => {
-      const row = await tx.railHandshakeReport.update({
-        where: { id: reportId },
+      // Compare-and-set on DRAFT. The guard above ran before this transaction
+      // opened, so two operators issuing the same report both used to pass it
+      // and both enqueue `report_issued` — subscribers saw one report issued
+      // twice. A losing caller now emits nothing.
+      const { count } = await tx.railHandshakeReport.updateMany({
+        where: { id: reportId, companyId, status: HandshakeReportStatus.DRAFT },
         data: { status: HandshakeReportStatus.PENDING_TOC },
+      });
+      if (count === 0) {
+        throw new ConflictException('This report was already issued by someone else.');
+      }
+
+      const row = await tx.railHandshakeReport.findFirstOrThrow({
+        where: { id: reportId, companyId },
         include: { deviations: { orderBy: { createdAt: 'asc' } } },
       });
       await this.outbox.enqueue(tx, companyId, 'rail.handshake.report_issued', {
@@ -495,9 +506,19 @@ export class RailHandshakeService {
 
     if (dto.agree) {
       const agreed = await this.prisma.withTenant(companyId, async (tx) => {
-        const row = await tx.railHandshakeDeviation.update({
-          where: { id: deviationId },
+        // Compare-and-set on LOGGED, the status the guard above was checked
+        // against. Two reviewers hitting Agree and Disagree at once used to
+        // both write and both publish `deviation_reviewed` — subscribers saw
+        // the same item come back AGREED *and* DISPUTED.
+        const { count } = await tx.railHandshakeDeviation.updateMany({
+          where: { id: deviationId, reportId, status: DeviationStatus.LOGGED },
           data: { status: DeviationStatus.AGREED, escalationStage: EscalationStage.NONE, disputeReason: null },
+        });
+        if (count === 0) {
+          throw new ConflictException('This item was already reviewed by someone else.');
+        }
+        const row = await tx.railHandshakeDeviation.findFirstOrThrow({
+          where: { id: deviationId, reportId },
         });
         await this.outbox.enqueue(tx, companyId, 'rail.handshake.deviation_reviewed', {
           reportId, reportNumber: dev.report.reportNumber, deviationId, trainSlotRef: dev.trainSlotRef,
@@ -517,14 +538,20 @@ export class RailHandshakeService {
       throw new BadRequestException('A dispute reason is required to flag an item as OPEN.');
     }
     const flagged = await this.prisma.withTenant(companyId, async (tx) => {
-      const row = await tx.railHandshakeDeviation.update({
-        where: { id: deviationId },
+      const { count } = await tx.railHandshakeDeviation.updateMany({
+        where: { id: deviationId, reportId, status: DeviationStatus.LOGGED },
         data: {
           status: DeviationStatus.OPEN,
           disputeReason: dto.disputeReason.trim(),
           escalationStage: EscalationStage.LIAISON_MANAGER_24H,
           escalatedAt: new Date(),
         },
+      });
+      if (count === 0) {
+        throw new ConflictException('This item was already reviewed by someone else.');
+      }
+      const row = await tx.railHandshakeDeviation.findFirstOrThrow({
+        where: { id: deviationId, reportId },
       });
       await this.outbox.enqueue(tx, companyId, 'rail.handshake.deviation_reviewed', {
         reportId, reportNumber: dev.report.reportNumber, deviationId, trainSlotRef: dev.trainSlotRef,
@@ -694,17 +721,29 @@ export class RailHandshakeService {
     if (dev.status !== DeviationStatus.OPEN) {
       throw new BadRequestException('Only an OPEN deviation can be resolved.');
     }
-    const resolved = await this.prisma.railHandshakeDeviation.update({
-      where: { id: deviationId },
-      data: {
-        status: DeviationStatus.RESOLVED,
-        resolutionNote: dto.resolutionNote ?? null,
-        ...(dto.responsibleParty ? { responsibleParty: dto.responsibleParty } : {}),
-        // Annexure 28: monies debited within 24h of resolution — flag recovery.
-        costRecovered: dto.costRecovered ?? dev.costRecovered,
-        escalationStage: EscalationStage.NONE,
-        resolvedAt: new Date(),
-      },
+    const resolved = await this.prisma.withTenant(companyId, async (tx) => {
+      // Compare-and-set on OPEN, the status the guard above was checked
+      // against, and the first tenant context this path has had. Two operators
+      // resolving the same item used to both write and both record an audit
+      // entry — the trail then credited two people with one resolution.
+      const { count } = await tx.railHandshakeDeviation.updateMany({
+        where: { id: deviationId, reportId, status: DeviationStatus.OPEN },
+        data: {
+          status: DeviationStatus.RESOLVED,
+          resolutionNote: dto.resolutionNote ?? null,
+          ...(dto.responsibleParty ? { responsibleParty: dto.responsibleParty } : {}),
+          // Annexure 28: monies debited within 24h of resolution.
+          costRecovered: dto.costRecovered ?? dev.costRecovered,
+          escalationStage: EscalationStage.NONE,
+          resolvedAt: new Date(),
+        },
+      });
+      if (count === 0) {
+        throw new ConflictException(
+          'This item was already resolved or disputed by someone else.',
+        );
+      }
+      return tx.railHandshakeDeviation.findFirstOrThrow({ where: { id: deviationId, reportId } });
     });
     await this.record(
       companyId, actor, RAIL_AUDIT_ACTION.DEVIATION_RESOLVED,
@@ -737,15 +776,41 @@ export class RailHandshakeService {
     if (!regulatorStages.some((stage) => stage === dev.escalationStage)) {
       throw new BadRequestException('A dispute can only be lodged after the item reaches the Route Logistics Forum stage.');
     }
-    const updated = await this.prisma.railHandshakeDeviation.update({
-      where: { id: deviationId },
-      data: { status: DeviationStatus.DISPUTED, escalationStage: EscalationStage.REGULATOR_DISPUTE },
+    // The deviation and its parent report move together, or not at all.
+    //
+    // These were two separate statements with no enclosing transaction. Losing
+    // the process between them left an item marked DISPUTED under a report that
+    // was still PENDING_TOC — a document lodged with the Regulator that
+    // disagrees with itself. Annexure 28 is a compliance record; the report
+    // status is what gets read at audit, so the two must never diverge.
+    //
+    // Both writes are compare-and-set on the state the guards above were
+    // checked against, so a second operator lodging the same dispute is refused
+    // rather than writing over the first.
+    const updated = await this.prisma.withTenant(companyId, async (tx) => {
+      const devCount = await tx.railHandshakeDeviation.updateMany({
+        where: { id: deviationId, reportId, status: DeviationStatus.OPEN },
+        data: { status: DeviationStatus.DISPUTED, escalationStage: EscalationStage.REGULATOR_DISPUTE },
+      });
+      if (devCount.count === 0) {
+        throw new ConflictException(
+          'This item was already resolved or disputed by someone else — nothing was lodged.',
+        );
+      }
+
+      const reportCount = await tx.railHandshakeReport.updateMany({
+        where: { id: reportId, companyId, status: dev.report.status },
+        data: { status: HandshakeReportStatus.DISPUTED },
+      });
+      if (reportCount.count === 0) {
+        throw new ConflictException(
+          'The report changed while the dispute was being lodged — nothing was lodged.',
+        );
+      }
+
+      return tx.railHandshakeDeviation.findFirstOrThrow({ where: { id: deviationId, reportId } });
     });
-    // Reflect on the parent report.
-    await this.prisma.railHandshakeReport.update({
-      where: { id: reportId },
-      data: { status: HandshakeReportStatus.DISPUTED },
-    });
+
     await this.record(
       companyId, actor, RAIL_AUDIT_ACTION.DISPUTE_LODGED_REGULATOR,
       { type: RAIL_AUDIT_TARGET.HANDSHAKE_DEVIATION, id: deviationId, name: dev.trainSlotRef },

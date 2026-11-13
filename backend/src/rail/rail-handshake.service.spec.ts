@@ -7,7 +7,7 @@
  * tested by BEHAVIOUR (tenant B really cannot see tenant A's rows), not just by
  * asserting which arguments were passed.
  */
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import {
   DeviationStatus, EscalationStage, HandshakeReportStatus, UserRole,
 } from '@prisma/client';
@@ -28,7 +28,7 @@ type Row = Record<string, any>;
 // ── In-memory Prisma fake ─────────────────────────────────────────────────────
 
 function makeDb() {
-  const db = {
+  const db: any = {
     reports: [] as Row[], deviations: [] as Row[], consignments: [] as Row[],
     networks: [] as Row[], rungs: [] as Row[], seq: 0,
   };
@@ -60,9 +60,39 @@ function makeDb() {
       .map((d) => ({ ...d })),
   });
 
+  /**
+   * Snapshot the tables a transaction can touch, and put them back if it
+   * throws.
+   *
+   * `lodgeDispute` relies on real atomicity: it writes the deviation and then
+   * the report, and the whole point is that a failure in the second leaves no
+   * trace of the first. A double that just ran the callback and let partial
+   * writes stand could not tell the difference between that and two
+   * independent writes — the exact bug being fixed.
+   */
+  const snapshot = () => ({
+    reports: db.reports.map((r) => ({ ...r })),
+    deviations: db.deviations.map((d) => ({ ...d })),
+    consignments: db.consignments.map((c) => ({ ...c })),
+  });
+  const restore = (snap: ReturnType<typeof snapshot>) => {
+    db.reports = snap.reports;
+    db.deviations = snap.deviations;
+    db.consignments = snap.consignments;
+  };
+  const runInTenant = async (_companyId: string, fn: any, _opts?: any) => {
+    const snap = snapshot();
+    try {
+      return await fn(prisma);
+    } catch (err) {
+      restore(snap);
+      throw err;
+    }
+  };
+
   const prisma = {
-    $transaction: async (fn: any) => fn(prisma),
-    withTenant: async (_companyId: string, fn: any, _opts?: any) => fn(prisma),
+    $transaction: async (fn: any) => runInTenant('', fn),
+    withTenant: async (companyId: string, fn: any, opts?: any) => runInTenant(companyId, fn, opts),
     // No networks or rungs seeded: the resolver falls back to the Transnet
     // ladder, which is the behaviour every test below was written against.
     // Seeding them here is how a test opts into another network's ladder.
@@ -110,6 +140,24 @@ function makeDb() {
         Object.assign(row, data);
         return include ? withDeviations(row) : { ...row };
       }),
+      findFirstOrThrow: jest.fn(async ({ where, include }: any) => {
+        const row = db.reports.find((r) => matches(r, where));
+        if (!row) throw new Error('No railHandshakeReport found');
+        return include ? withDeviations(row) : { ...row };
+      }),
+      /**
+       * Honours the WHOLE where-clause, including `status`.
+       *
+       * A fake that matched on the id alone would make every compare-and-set
+       * succeed, so the concurrency tests below could not fail — they would
+       * assert a guarantee the double does not actually model. This is the one
+       * method where the fake has to be strict.
+       */
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const hits = db.reports.filter((r) => matches(r, where));
+        for (const row of hits) Object.assign(row, data);
+        return { count: hits.length };
+      }),
     },
     railHandshakeDeviation: {
       create: jest.fn(async ({ data }: any) => {
@@ -130,6 +178,17 @@ function makeDb() {
         const row = db.deviations.find((d) => d.id === where.id);
         Object.assign(row, data);
         return { ...row };
+      }),
+      findFirstOrThrow: jest.fn(async ({ where }: any) => {
+        const row = db.deviations.find((d) => matches(d, where, { report: reportOf }));
+        if (!row) throw new Error('No railHandshakeDeviation found');
+        return { ...row, report: { status: reportOf(row)!.status } };
+      }),
+      /** Honours the whole where-clause — see the note on the report's version. */
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const hits = db.deviations.filter((d) => matches(d, where));
+        for (const row of hits) Object.assign(row, data);
+        return { count: hits.length };
       }),
       delete: jest.fn(async ({ where }: any) => {
         db.deviations.splice(db.deviations.findIndex((d) => d.id === where.id), 1);
@@ -423,6 +482,67 @@ describe('lodgeDispute — the Regulator rung', () => {
   it('only an OPEN item can be lodged', async () => {
     const { svc, rep, dev } = setup(EscalationStage.ROUTE_LOGISTICS_FORUM, DeviationStatus.AGREED);
     await expect(svc.lodgeDispute('A', rep.id, dev.id, MANAGER)).rejects.toThrow(/Only an OPEN/);
+  });
+
+  describe('the item and the report never disagree', () => {
+    it('leaves neither written when the report moved first', async () => {
+      const { svc, rep, dev, db, audit, prisma } = setup(EscalationStage.ROUTE_LOGISTICS_FORUM);
+
+      // The report moved on AFTER the guards passed — the window this fix
+      // closes. Mutating before the call would only prove the pre-guard works.
+      const original = prisma.withTenant;
+      jest.spyOn(prisma, 'withTenant').mockImplementation(async (c: string, fn: any) => {
+        db.reports.find((r: any) => r.id === rep.id)!.status = HandshakeReportStatus.CLOSED;
+        return original(c, fn);
+      });
+
+      await expect(svc.lodgeDispute('A', rep.id, dev.id, MANAGER)).rejects.toThrow(ConflictException);
+      jest.restoreAllMocks();
+
+      // Both writes are in one transaction, so a failure in the second leaves
+      // the first undone. The alternative — an item marked DISPUTED under a
+      // report that is not — is a document lodged with the Regulator that
+      // contradicts itself.
+      expect(db.deviations.find((d: any) => d.id === dev.id)!.status).toBe(DeviationStatus.OPEN);
+      expect(db.reports.find((r: any) => r.id === rep.id)!.status).toBe(HandshakeReportStatus.CLOSED);
+      expect(auditActions(audit)).toEqual([]);
+    });
+
+    it('refuses when another operator already disputed the item', async () => {
+      const { svc, rep, dev, db, audit, prisma } = setup(EscalationStage.ROUTE_LOGISTICS_FORUM);
+
+      // Someone else got there first, after our guards passed.
+      const original = prisma.withTenant;
+      jest.spyOn(prisma, 'withTenant').mockImplementation(async (c: string, fn: any) => {
+        db.deviations.find((d: any) => d.id === dev.id)!.status = DeviationStatus.DISPUTED;
+        return original(c, fn);
+      });
+
+      await expect(svc.lodgeDispute('A', rep.id, dev.id, MANAGER)).rejects.toThrow(ConflictException);
+      jest.restoreAllMocks();
+
+      // The report must not be flipped by a call that did not lodge anything.
+      expect(db.reports.find((r: any) => r.id === rep.id)!.status).toBe(HandshakeReportStatus.SIGNED_OFF);
+      expect(auditActions(audit)).toEqual([]);
+    });
+
+    it('claims the item on the state it checked, not on the id alone', async () => {
+      const { svc, rep, dev, prisma } = setup(EscalationStage.ROUTE_LOGISTICS_FORUM);
+      await svc.lodgeDispute('A', rep.id, dev.id, MANAGER);
+
+      const call = prisma.railHandshakeDeviation.updateMany.mock.calls[0][0];
+      expect(call.where).toMatchObject({ id: dev.id, reportId: rep.id, status: DeviationStatus.OPEN });
+    });
+
+    it('runs both writes inside one tenant context', async () => {
+      const { svc, rep, dev, prisma } = setup(EscalationStage.ROUTE_LOGISTICS_FORUM);
+      const spy = jest.spyOn(prisma, 'withTenant');
+      await svc.lodgeDispute('A', rep.id, dev.id, MANAGER);
+      // One transaction for the pair, not one per write.
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith('A', expect.any(Function));
+      spy.mockRestore();
+    });
   });
 
   it('is a formal commitment: a dispatcher cannot lodge it (service-level, not just the route)', async () => {
@@ -850,6 +970,146 @@ describe('handshake lifecycle — guards and audit trail', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+describe('a status is only written where it is still true', () => {
+  const makeSvc = () => makeService();
+
+  describe('issueReport', () => {
+    const draft = () => {
+      const s = makeSvc();
+      const rep = s.seedReport({ status: HandshakeReportStatus.DRAFT });
+      return { ...s, rep };
+    };
+
+    it('claims DRAFT inside the transaction, not from the read before it', async () => {
+      const { svc, rep, prisma } = draft();
+      await svc.issueReport('A', rep.id, MANAGER);
+      const call = prisma.railHandshakeReport.updateMany.mock.calls[0][0];
+      expect(call.where).toMatchObject({
+        id: rep.id,
+        companyId: 'A',
+        status: HandshakeReportStatus.DRAFT,
+      });
+    });
+
+    it('emits no event when another operator issued it first', async () => {
+      const { svc, rep, db, outbox, prisma } = draft();
+      // Someone else issued it after our guard passed.
+      const original = prisma.withTenant;
+      jest.spyOn(prisma, 'withTenant').mockImplementation(async (c: string, fn: any) => {
+        db.reports.find((r: any) => r.id === rep.id)!.status = HandshakeReportStatus.PENDING_TOC;
+        return original(c, fn);
+      });
+
+      await expect(svc.issueReport('A', rep.id, MANAGER)).rejects.toThrow(ConflictException);
+      jest.restoreAllMocks();
+
+      // Subscribers must not see one report issued twice.
+      expect(enqueued(outbox)).toEqual([]);
+    });
+
+    it('emits exactly one event on a clean issue', async () => {
+      const { svc, rep, outbox } = draft();
+      await svc.issueReport('A', rep.id, MANAGER);
+      expect(enqueued(outbox)).toEqual(['rail.handshake.report_issued']);
+    });
+  });
+
+  describe('resolveDeviation', () => {
+    const open = () => {
+      const s = makeSvc();
+      const rep = s.seedReport({ status: HandshakeReportStatus.PENDING_TOC });
+      const dev = s.seedDeviation(rep.id, { status: DeviationStatus.OPEN, escalationStage: EscalationStage.LIAISON_MANAGER_24H });
+      return { ...s, rep, dev };
+    };
+
+    it('claims OPEN and records one resolution', async () => {
+      const { svc, rep, dev, prisma, audit } = open();
+      await svc.resolveDeviation('A', rep.id, dev.id, { resolutionNote: 'Agreed with TOC' }, MANAGER);
+
+      const call = prisma.railHandshakeDeviation.updateMany.mock.calls[0][0];
+      expect(call.where).toMatchObject({ id: dev.id, reportId: rep.id, status: DeviationStatus.OPEN });
+      expect(dbStatus(audit)).toBe(1);
+    });
+
+    it('refuses when another operator resolved it first', async () => {
+      const { svc, rep, dev, db, audit, prisma } = open();
+      const original = prisma.withTenant;
+      jest.spyOn(prisma, 'withTenant').mockImplementation(async (c: string, fn: any) => {
+        db.deviations.find((d: any) => d.id === dev.id)!.status = DeviationStatus.RESOLVED;
+        return original(c, fn);
+      });
+
+      await expect(
+        svc.resolveDeviation('A', rep.id, dev.id, { resolutionNote: 'Mine' }, MANAGER),
+      ).rejects.toThrow(ConflictException);
+      jest.restoreAllMocks();
+
+      // Two audit entries for one resolution credits two people with it.
+      expect(dbStatus(audit)).toBe(0);
+      expect(db.deviations.find((d: any) => d.id === dev.id)!.status).toBe(DeviationStatus.RESOLVED);
+    });
+
+    it('runs the resolution inside a tenant context', async () => {
+      const { svc, rep, dev, prisma } = open();
+      const spy = jest.spyOn(prisma, 'withTenant');
+      await svc.resolveDeviation('A', rep.id, dev.id, {}, MANAGER);
+      expect(spy).toHaveBeenCalledWith('A', expect.any(Function));
+      spy.mockRestore();
+    });
+  });
+
+  describe('reviewDeviation', () => {
+    const logged = () => {
+      const s = makeSvc();
+      const rep = s.seedReport({ status: HandshakeReportStatus.PENDING_TOC });
+      const dev = s.seedDeviation(rep.id, { status: DeviationStatus.LOGGED });
+      return { ...s, rep, dev };
+    };
+
+    it('publishes one outcome when two reviewers disagree', async () => {
+      const { svc, rep, dev, db, outbox, prisma } = logged();
+
+      // The other reviewer's decision lands after our guard passed.
+      const original = prisma.withTenant;
+      jest.spyOn(prisma, 'withTenant').mockImplementation(async (c: string, fn: any) => {
+        db.deviations.find((d: any) => d.id === dev.id)!.status = DeviationStatus.AGREED;
+        return original(c, fn);
+      });
+
+      await expect(
+        svc.reviewDeviation('A', rep.id, dev.id, { agree: false, disputeReason: 'Not ours' }, MANAGER),
+      ).rejects.toThrow(ConflictException);
+
+      // Subscribers must not see the same item come back both AGREED and
+      // DISPUTED — the losing review publishes nothing at all.
+      expect(enqueued(outbox)).toEqual([]);
+      jest.restoreAllMocks();
+    });
+
+    it('claims LOGGED, the state the guard was checked against', async () => {
+      const { svc, rep, dev, prisma } = logged();
+      await svc.reviewDeviation('A', rep.id, dev.id, { agree: true }, MANAGER);
+      const call = prisma.railHandshakeDeviation.updateMany.mock.calls[0][0];
+      expect(call.where).toMatchObject({ id: dev.id, reportId: rep.id, status: DeviationStatus.LOGGED });
+    });
+
+    it('publishes exactly one outcome on a clean review', async () => {
+      const { svc, rep, dev, outbox } = logged();
+      await svc.reviewDeviation('A', rep.id, dev.id, { agree: true }, MANAGER);
+      expect(enqueued(outbox)).toEqual(['rail.handshake.deviation_reviewed']);
+    });
+  });
+
+  function enqueued(outbox: any): string[] {
+    const calls = outbox?.enqueue?.mock?.calls ?? [];
+    return calls.map((c: any[]) => c[2]);
+  }
+
+  function dbStatus(audit: any): number {
+    return audit?.record?.mock?.calls?.length ?? 0;
+  }
+});
+
 describe('escalation follows the report\'s network, not Transnet by default', () => {
   /**
    * The reason this module exists.
