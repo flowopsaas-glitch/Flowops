@@ -61,9 +61,16 @@ describe("DriverPortalService", () => {
       // The linehaul confirmation runs in one transaction; the mock executes the
       // callback against the same jest mocks so assertions see every write.
       $transaction: jest.fn(async (fn: any) => fn(tx(prisma))),
+      // startDuty/endDuty run inside withTenant(); the mock executes the
+      // callback against the same jest mocks so assertions see every write.
+      withTenant: jest.fn(async (_companyId: string, fn: any) => fn(tx(prisma))),
     };
     function tx(p: any) {
-      return {
+      // Memoised: withTenant() and $transaction() both hand the service a
+      // client, and assertions need to inspect the SAME mock objects the
+      // service wrote through, not a fresh set built per call.
+      if (p.__tx) return p.__tx;
+      const t = {
         manifest: {
           updateMany: jest.fn(async () => p.manifest.updateManyResult ?? { count: 1 }),
         },
@@ -82,7 +89,24 @@ describe("DriverPortalService", () => {
           update: jest.fn(),
           create: jest.fn(),
         },
+        $queryRaw: jest.fn(async () => []),
+        driver: {
+          findFirst: jest.fn(async () => p.driver?.currentResult ?? { allowedModes: ['BAKKIE','TRUCK'], vehicleReg: 'CA-123' }),
+          updateMany: jest.fn(async () => ({ count: 1 })),
+        },
+        driverDuty: {
+          findFirst: jest.fn(async () => p.driverDuty?.activeResult ?? null),
+          findUniqueOrThrow: jest.fn(async ({ where }: any) => p.driverDuty?.landedRow ?? { id: where.id, status: 'COMPLETED', startedAt: new Date('2026-11-16T06:00:00Z'), endedAt: new Date('2026-11-16T14:00:00Z') }),
+          updateMany: jest.fn(async (args: any) => {
+            p.driverDuty = { ...(p.driverDuty ?? {}) };
+            p.driverDuty.updateManyCalls = [...(p.driverDuty.updateManyCalls ?? []), args];
+            return { count: p.driverDuty.updateManyResult ?? 1 };
+          }),
+          create: jest.fn(async ({ data }: any) => ({ id: 'duty-new', status: 'ACTIVE', ...data })),
+        },
       };
+      p.__tx = t;
+      return t;
     }
     notifications = {
       notifyWaybillStatus: jest.fn().mockResolvedValue(undefined),
@@ -418,6 +442,103 @@ describe("DriverPortalService", () => {
         expect.objectContaining({
           where: expect.objectContaining({ driverId: "driver-1" }),
         }),
+      );
+    });
+  });
+
+  describe('driver duty — a shift can only start and end once', () => {
+    const activeDuty = {
+      id: 'duty-1',
+      driverId: 'driver-1',
+      companyId: 'company-1',
+      status: 'ACTIVE',
+      mode: 'BAKKIE',
+      startedAt: new Date('2026-11-16T06:00:00Z'),
+      endedAt: null,
+      note: null,
+    };
+
+    it('endDuty takes the per-driver lock before it reads anything', async () => {
+      prisma.driverDuty = { activeResult: activeDuty };
+      await service.endDuty('driver-1', 'company-1');
+      expect(prisma.__tx.$queryRaw).toHaveBeenCalled();
+    });
+
+    it('endDuty ends the shift with compare-and-set on ACTIVE', async () => {
+      prisma.driverDuty = { activeResult: activeDuty };
+      await service.endDuty('driver-1', 'company-1');
+
+      const calls = prisma.__tx.driverDuty.updateMany.mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      expect(calls[0][0].where).toMatchObject({ id: 'duty-1', companyId: 'company-1', status: 'ACTIVE' });
+    });
+
+    it('endDuty emits exactly one duty.completed event', async () => {
+      prisma.driverDuty = { activeResult: activeDuty };
+      await service.endDuty('driver-1', 'company-1');
+      expect(outbox.enqueue).toHaveBeenCalledTimes(1);
+      expect(outbox.enqueue.mock.calls[0][2]).toBe('driver.duty.completed');
+    });
+
+    it('endDuty refuses when the shift was ended by another device first', async () => {
+      // Standing down on two devices: the second call matches nothing, because
+      // the duty is no longer ACTIVE. It must not report a duration it never
+      // recorded, and must not emit a second event.
+      prisma.driverDuty = { activeResult: activeDuty, updateManyResult: 0 };
+
+      await expect(service.endDuty('driver-1', 'company-1')).rejects.toThrow(/already ended/i);
+      expect(outbox.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('endDuty throws rather than returning a second duration for one shift', async () => {
+      prisma.driverDuty = { activeResult: activeDuty, updateManyResult: 0 };
+      await expect(service.endDuty('driver-1', 'company-1')).rejects.toThrow(ConflictException);
+    });
+
+    it('startDuty auto-ends the previous shift with compare-and-set', async () => {
+      prisma.driverDuty = { activeResult: activeDuty };
+      await service.startDuty('driver-1', 'company-1', { mode: 'BAKKIE' as any });
+
+      const calls = prisma.__tx.driverDuty.updateMany.mock.calls;
+      expect(calls[0][0].where).toMatchObject({ id: 'duty-1', companyId: 'company-1', status: 'ACTIVE' });
+    });
+
+    it('startDuty does not emit a duplicate completed event if the previous shift is already ended', async () => {
+      // Two devices starting a shift at once: the second finds the previous
+      // duty still present but no longer ACTIVE, so it must not announce an
+      // ending it did not perform.
+      prisma.driverDuty = { activeResult: activeDuty, updateManyResult: 0 };
+      await service.startDuty('driver-1', 'company-1', { mode: 'BAKKIE' as any });
+
+      const completed = outbox.enqueue.mock.calls.filter((c: any[]) => c[2] === 'driver.duty.completed');
+      expect(completed).toHaveLength(0);
+      // …but it still announces the shift it did start.
+      expect(outbox.enqueue.mock.calls.some((c: any[]) => c[2] === 'driver.duty.started')).toBe(true);
+    });
+
+    it('startDuty reads the previous shift after taking the lock, not before', async () => {
+      prisma.driverDuty = { activeResult: activeDuty };
+      await service.startDuty('driver-1', 'company-1', { mode: 'BAKKIE' as any });
+
+      // Under READ COMMITTED the post-lock read is a fresh snapshot, so a
+      // shift committed by an earlier serialised call is visible here.
+      expect(prisma.__tx.$queryRaw).toHaveBeenCalled();
+      expect(prisma.__tx.driverDuty.findFirst).toHaveBeenCalled();
+    });
+
+    it('startDuty scopes the previous-shift read to the company', async () => {
+      prisma.driverDuty = { activeResult: activeDuty };
+      await service.startDuty('driver-1', 'company-1', { mode: 'BAKKIE' as any });
+      expect(prisma.__tx.driverDuty.findFirst.mock.calls[0][0].where).toMatchObject({
+        driverId: 'driver-1', companyId: 'company-1',
+      });
+    });
+
+    it('scopes the driver status write to the company', async () => {
+      prisma.driverDuty = { activeResult: activeDuty };
+      await service.endDuty('driver-1', 'company-1');
+      expect(prisma.__tx.driver.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'driver-1', companyId: 'company-1' } }),
       );
     });
   });
