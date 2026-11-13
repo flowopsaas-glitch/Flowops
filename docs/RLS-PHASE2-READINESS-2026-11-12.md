@@ -17,6 +17,27 @@ much of the codebase uses it:
 Fix (1) before anything else: until the connection is not a superuser, the 9.2%
 measures how much of the codebase *would* be isolated if the policy were live.
 
+**Status 2026-11-13 — finding 1 now has a fix staged and verified, but not yet
+provisioned.** `backend/scripts/rls-roles.sql` creates the two-role split
+recommended below, and `backend/scripts/rls-role-split.test.mjs` proves the
+semantics against a real PostgreSQL rather than a reading of the SQL: the app
+role fails closed with no tenant context, the platform role keeps the ~114
+cross-tenant operations working, and neither role holds a bypass. 13 assertions,
+wired into `release:safety:test`.
+
+Staged is not the same as live. What remains, in the order it must happen:
+
+1. **Provision the roles on the cluster** — see the header of `rls-roles.sql` —
+   and point `DATABASE_URL` at `flowops_app`. Until that runs, the SQL is inert
+   and this document's finding 1 still holds.
+2. **Give the platform paths a second Prisma client** connecting as
+   `flowops_platform`. The files permitted to use it are already enumerated in
+   `PLATFORM_SCOPE` (`scripts/tenant-scope-policy.mjs`), and that list already
+   fails the build if an entry stops matching — so this step is mechanical, and
+   the guard against it growing is already in place.
+3. **Only then** does growing `withTenant` coverage measure something, because
+   only then is there a policy underneath it to be covered — or not.
+
 ---
 
 ## BLOCKING FINDING 1: the policy is not in force, because the app connects as a superuser

@@ -58,6 +58,12 @@ coverage/
 # committed, or deployments silently apply nothing (see scripts/verify-migrations.mjs).
 !backend/prisma/migrations/**/*.sql
 
+# Same reasoning for the RLS role-split script: it is provisioning code that a
+# deployment runs, reviewed and pinned by scripts/rls-role-split.test.mjs. Not a
+# dump. Without this line the file is invisible to `git add` and the fix ships
+# as a document describing SQL nobody can find.
+!backend/scripts/rls-roles.sql
+
 # ─── Uploads ──
 uploads/
 
