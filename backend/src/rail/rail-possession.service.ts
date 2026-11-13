@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Prisma, RailPossessionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -165,7 +165,20 @@ export class RailPossessionService {
     if (!w) throw new NotFoundException('Possession window not found');
     if (!from.includes(w.status)) throw new BadRequestException(`A ${w.status} possession window cannot become ${to}.`);
     const updated = await this.prisma.withTenant(companyId, async (tx) => {
-      const u = await tx.railPossessionWindow.update({ where: { id }, data: { status: to } });
+      // Compare-and-set on the status the guard above accepted. A possession
+      // window is a safety boundary — the track is handed over for
+      // engineering work — so two operators cancelling and completing the
+      // same window must not both publish.
+      const { count } = await tx.railPossessionWindow.updateMany({
+        where: { id, companyId, status: w.status },
+        data: { status: to },
+      });
+      if (count === 0) {
+        throw new ConflictException(
+          `This possession window was already moved from ${w.status} by someone else.`,
+        );
+      }
+      const u = await tx.railPossessionWindow.findFirstOrThrow({ where: { id, companyId } });
       await this.outbox.enqueue(tx, companyId, 'rail.possession.status_changed', {
         windowId: id, title: w.title, corridorCode: w.corridorCode, from: w.status, to,
       });
