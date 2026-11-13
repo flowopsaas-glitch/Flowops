@@ -45,6 +45,14 @@ coverage/
 *.sql
 *.backup
 *.pg_dump
+# Compressed dumps too. `*.sql` only matches names ENDING in .sql, so
+# backup-2026-11-11.sql.gz slipped straight past it and sat untracked in the
+# repo root -- a production database dump one `git add -A` from being pushed.
+*.sql.gz
+*.sql.bz2
+*.sql.xz
+*.pg_dump.gz
+*.dump.gz
 
 # ...but Prisma migrations are the schema's history, not a dump: they must be
 # committed, or deployments silently apply nothing (see scripts/verify-migrations.mjs).
