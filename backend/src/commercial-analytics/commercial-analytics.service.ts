@@ -5,6 +5,7 @@ import { GROQ_MODEL } from '../ai/groq-model';
 import { withCompanyId } from '../common/security/tenant.util';
 import { Money } from '../common/money.util';
 import { LaneProfitabilityService } from './lane-profitability.service';
+import { ClientProfitabilityService } from './client-profitability.service';
 
 @Injectable()
 export class CommercialAnalyticsService {
@@ -14,6 +15,7 @@ export class CommercialAnalyticsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly lanes: LaneProfitabilityService,
+    private readonly clients: ClientProfitabilityService,
   ) {}
 
 
@@ -76,12 +78,12 @@ export class CommercialAnalyticsService {
     const prevRevenue = prevInvoiceAgg._sum.total || 0;
     const deliveryCount = waybills.length;
 
-    // Estimate costs using config model
-    const avgCostPerDel = (cfg.fuelCostPerKm * cfg.avgKmPerDelivery)
-      + (cfg.driverHourlyCost * (cfg.avgDeliveryMinutes / 60))
-      + cfg.vehicleCostPerKm * cfg.avgKmPerDelivery
-      + cfg.overheadPerDelivery;
-    const totalCost = avgCostPerDel * deliveryCount;
+    // Cost from recorded data wherever the Trip Truth engine has written it,
+    // and from the config model only where it has not. `basis` says which —
+    // see ClientProfitabilityService for why the two are never averaged.
+    const costTotals = await this.clients.periodTotals(companyId, targetPeriod, cfg);
+    const totalCost =
+      costTotals.basis === 'ESTIMATED' ? costTotals.estimatedCost : costTotals.measuredCost;
     const grossProfit = totalRevenue - totalCost;
     const marginPct = totalRevenue > 0
       ? Math.round((grossProfit / totalRevenue) * 1000) / 10 : 0;
@@ -102,10 +104,18 @@ export class CommercialAnalyticsService {
         marginPct,
         deliveryCount,
         avgRevenuePerDel,
-        avgCostPerDel: Money.round(avgCostPerDel),
+        avgCostPerDel: deliveryCount > 0
+          ? Math.round((totalCost / deliveryCount) * 100) / 100 : 0,
         revenueDelta,
         targetMarginPct: cfg.targetMarginPct,
-        marginHealth: marginPct >= cfg.targetMarginPct ? 'HEALTHY'
+        // What the margin rests on. HEALTHY / WARNING / CRITICAL is a verdict
+        // about the whole business, so it is not issued from a modelled rate.
+        basis: costTotals.basis,
+        coveragePct: costTotals.coveragePct,
+        measuredDeliveries: costTotals.measuredDeliveries,
+        marginHealth: costTotals.basis === 'ESTIMATED'
+          ? 'UNKNOWN'
+          : marginPct >= cfg.targetMarginPct ? 'HEALTHY'
           : marginPct >= cfg.minMarginPct ? 'WARNING' : 'CRITICAL',
       },
     };
@@ -116,91 +126,38 @@ export class CommercialAnalyticsService {
   // CLIENT PROFITABILITY MATRIX
   // ═══════════════════════════════════════════════════════════════════════
 
+  /**
+   * GET /commercial-analytics/clients — client profitability matrix.
+   *
+   * Cost comes from the deliveries actually billed to each client, joined
+   * invoice → invoice item → waybill → DeliveryCostAllocation, rather than from
+   * a flat rate applied uniformly to every stop.
+   *
+   * `health` is UNKNOWN wherever cost was never recorded. No verdict is issued
+   * from a modelled rate: two customers billed identically are not equally
+   * cheap to serve, and telling an operator one of them is unprofitable is a
+   * commercial decision that must not be made from an average.
+   */
   async getClientMatrix(companyId: string, period?: string) {
     const targetPeriod = period || this.currentPeriod();
     const cfg = await this.getConfig(companyId);
-    const { start, end } = this.periodRange(targetPeriod);
 
-    const invoices = await this.prisma.invoice.findMany({
-      where: { companyId, createdAt: { gte: start, lt: end } },
-      select: { clientName: true, total: true, status: true, paidAt: true,
-        sentAt: true, dueDate: true, items: { select: { waybillId: true } } },
-    });
-
-    // Build per-client profitability
-    const clientMap: Record<string, any> = {};
-    for (const inv of invoices) {
-      const key = inv.clientName;
-      if (!clientMap[key]) {
-        clientMap[key] = {
-          clientName: key, revenue: 0, invoiceCount: 0,
-          paidAmount: 0, overdueAmount: 0, deliveryCount: 0,
-          totalDaysToPay: 0, paidWithDays: 0,
-        };
-      }
-      const c = clientMap[key];
-      c.revenue += inv.total;
-      c.invoiceCount += 1;
-      c.deliveryCount += inv.items.length;
-
-      if (inv.status === 'PAID') {
-        c.paidAmount += inv.total;
-        if (inv.sentAt && inv.paidAt) {
-          const days = Math.floor(
-            (new Date(inv.paidAt).getTime() - new Date(inv.sentAt).getTime()) / 86400000
-          );
-          if (days >= 0) { c.totalDaysToPay += days; c.paidWithDays += 1; }
-        }
-      }
-      if ((inv.status === 'SENT' || inv.status === 'OVERDUE') && inv.dueDate
-          && new Date(inv.dueDate) < new Date()) {
-        c.overdueAmount += inv.total;
-      }
-    }
-
-    const avgCostPerDel = (cfg.fuelCostPerKm * cfg.avgKmPerDelivery)
-      + (cfg.driverHourlyCost * (cfg.avgDeliveryMinutes / 60))
-      + cfg.vehicleCostPerKm * cfg.avgKmPerDelivery
-      + cfg.overheadPerDelivery;
-
-    const clients = Object.values(clientMap).map((c: any) => {
-      const cost = c.deliveryCount * avgCostPerDel;
-      const profit = c.revenue - cost;
-      const margin = c.revenue > 0
-        ? Math.round((profit / c.revenue) * 1000) / 10 : 0;
-      const avgDays = c.paidWithDays > 0
-        ? Math.round(c.totalDaysToPay / c.paidWithDays) : null;
-
-      return {
-        clientName: c.clientName,
-        revenue: Math.round(c.revenue),
-        deliveryCount: c.deliveryCount,
-        avgRevenuePerDel: c.deliveryCount > 0
-          ? Money.round(c.revenue / c.deliveryCount) : 0,
-        estimatedCost: Math.round(cost),
-        grossProfit: Math.round(profit),
-        marginPct: margin,
-        avgDaysToPay: avgDays,
-        collectionRate: c.revenue > 0
-          ? Math.round((c.paidAmount / c.revenue) * 100) : 0,
-        overdueAmount: Math.round(c.overdueAmount),
-        health: margin >= cfg.targetMarginPct ? 'PROFITABLE'
-          : margin >= cfg.minMarginPct ? 'MARGINAL' : 'UNPROFITABLE',
-      };
-    }).sort((a, b) => b.revenue - a.revenue);
-
-    // Assign ranks
-    const ranked = [...clients].sort((a, b) => b.grossProfit - a.grossProfit);
-    ranked.forEach((c, i) => (c as any).profitRank = i + 1);
+    const { basis, clients, totals } = await this.clients.aggregate(companyId, targetPeriod, cfg);
 
     return {
       period: targetPeriod,
       currency: 'ZAR',
+      basis,
+      coveragePct: totals.coveragePct,
+      measuredDeliveries: totals.measuredDeliveries,
       totalClients: clients.length,
-      profitable: clients.filter(c => c.health === 'PROFITABLE').length,
-      marginal: clients.filter(c => c.health === 'MARGINAL').length,
-      unprofitable: clients.filter(c => c.health === 'UNPROFITABLE').length,
+      profitable: clients.filter((c) => c.health === 'PROFITABLE').length,
+      marginal: clients.filter((c) => c.health === 'MARGINAL').length,
+      unprofitable: clients.filter((c) => c.health === 'UNPROFITABLE').length,
+      // Clients whose cost has never been recorded. A gap, not a verdict.
+      unknown: clients.filter((c) => c.health === 'UNKNOWN').length,
       clients: clients.slice(0, 20),
+      totals,
     };
   }
 
