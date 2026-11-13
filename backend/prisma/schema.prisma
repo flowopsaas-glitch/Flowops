@@ -241,6 +241,7 @@ model Company {
   payments           Payment[]
   leads              Lead[]
   bookingPortalLinks BookingPortalLink[]
+  bookingRequests    BookingRequest[]
   aiEvents           AiEvent[]
   emailHubItems      EmailHubItem[]
   workflows          Workflow[]
@@ -1798,6 +1799,15 @@ model BookingRequest {
   id     String @id @default(cuid())
   status String @default("pending")
 
+  // The tenant this request belongs to, copied from the portal link at write
+  // time. Without it the row is only reachable through `link`, so it has no
+  // tenant of its own: RLS cannot be attached to it, and any lookup by id
+  // resolves for every company rather than for the caller's. The link remains
+  // the authority; this column is a denormalised copy of link.companyId, and
+  // the service derives it from the link rather than trusting the body.
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   senderName       String
   senderPhone      String
   senderAddress    String
@@ -1812,6 +1822,9 @@ model BookingRequest {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([companyId, status])
+  @@index([companyId, createdAt])
+  @@index([linkId])
   @@map("booking_requests")
 }
 
