@@ -708,6 +708,23 @@ export class DriverPortalService {
   }
 
   /**
+   * Serialise every duty change for one driver.
+   *
+   * Nothing in the schema stops a driver holding two ACTIVE duties at once: the
+   * only index is a plain `[driverId, status]`, so two devices starting a shift
+   * at the same moment both read "no active duty" and both create one. The
+   * driver then has two open shifts, and job scoping, checklists and hours are
+   * all computed against whichever one a query happens to return first.
+   *
+   * The lock is transaction-scoped, so it is released on commit or rollback and
+   * cannot leak. 641903 is a key in the same space the invoice sequence uses;
+   * it is arbitrary but must not collide.
+   */
+  private async lockDriverShift(tx: any, driverId: string) {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(641903, hashtext(${driverId}))`;
+  }
+
+  /**
    * POST /driver-portal/duty/start — declare the craft for this shift.
    * Switching modes is the normal flow: the previous duty is auto-ended and
    * everything it implied (job scoping, checklist) changes with it.
@@ -718,6 +735,8 @@ export class DriverPortalService {
     // copied onto a duty in THIS tenant. Reading it inside withTenant scopes it to
     // companyId (and lets RLS back the filter up).
     return this.prisma.withTenant(companyId, async (tx) => {
+      await this.lockDriverShift(tx, driverId);
+
       const driver = await tx.driver.findFirst({
         where: { id: driverId, companyId },
         select: { allowedModes: true, vehicleReg: true },
@@ -731,16 +750,29 @@ export class DriverPortalService {
       });
       if (!check.ok) throw new BadRequestException(check.blockers.join(' '));
 
-      const previous = await tx.driverDuty.findFirst({ where: { driverId, status: 'ACTIVE' }, orderBy: { startedAt: 'desc' } });
+      // Read AFTER the lock. Under READ COMMITTED each statement takes a fresh
+      // snapshot, so this sees any duty an earlier serialised call committed.
+      // companyId is part of the filter here as it already is in endDuty — the
+      // two halves of one lifecycle should not disagree about their scoping.
+      const previous = await tx.driverDuty.findFirst({ where: { driverId, companyId, status: 'ACTIVE' }, orderBy: { startedAt: 'desc' } });
       let previousEnded: { id: string; mode: DriverMode; endedAt: Date } | null = null;
       if (previous) {
         const endedAt = new Date();
-        await tx.driverDuty.update({ where: { id: previous.id }, data: { status: 'COMPLETED', endedAt } });
-        previousEnded = { id: previous.id, mode: previous.mode, endedAt };
-        await this.outbox.enqueue(tx, companyId, 'driver.duty.completed', {
-          dutyId: previous.id, driverId, mode: previous.mode, autoEnded: true,
-          durationMinutes: dutyMinutes(previous, endedAt),
+        // Compare-and-set: end it only while it is still ACTIVE.
+        const { count } = await tx.driverDuty.updateMany({
+          where: { id: previous.id, companyId, status: 'ACTIVE' },
+          data: { status: 'COMPLETED', endedAt },
         });
+        // count === 0 means it stopped being ACTIVE between the read and the
+        // write. With the lock held that can only be an earlier committed call,
+        // which already emitted the event — emitting again would double it.
+        if (count > 0) {
+          previousEnded = { id: previous.id, mode: previous.mode, endedAt };
+          await this.outbox.enqueue(tx, companyId, 'driver.duty.completed', {
+            dutyId: previous.id, driverId, mode: previous.mode, autoEnded: true,
+            durationMinutes: dutyMinutes(previous, endedAt),
+          });
+        }
       }
       const duty = await tx.driverDuty.create({
         data: {
@@ -749,7 +781,7 @@ export class DriverPortalService {
           note: dto.note ?? null,
         },
       });
-      await tx.driver.update({ where: { id: driverId }, data: { status: 'AVAILABLE' } });
+      await tx.driver.updateMany({ where: { id: driverId, companyId }, data: { status: 'AVAILABLE' } });
       await this.outbox.enqueue(tx, companyId, 'driver.duty.started', {
         dutyId: duty.id, driverId, mode: duty.mode, vehicleReg: duty.vehicleReg,
         previousDutyId: previousEnded?.id ?? null,
@@ -761,15 +793,32 @@ export class DriverPortalService {
   /** POST /driver-portal/duty/end — stand down from the shift. */
   async endDuty(driverId: string, companyId: string, note?: string) {
     return this.prisma.withTenant(companyId, async (tx) => {
+      await this.lockDriverShift(tx, driverId);
+
       // Read the active duty INSIDE the tenant transaction, so ending a shift cannot
-      // pick up (or close) another tenant's duty record.
+      // pick up (or close) another tenant's duty record. And read it after the
+      // lock, so a shift ended moments ago on another device is visible here
+      // instead of being closed a second time.
       const active = await tx.driverDuty.findFirst({ where: { driverId, companyId, status: 'ACTIVE' }, orderBy: { startedAt: 'desc' } });
       if (!canEndDuty(active)) throw new BadRequestException('No active duty to end.');
       const endedAt = new Date();
-      const duty = await tx.driverDuty.update({
-        where: { id: active!.id }, data: { status: 'COMPLETED', endedAt, note: note ?? active!.note },
+      // Compare-and-set on ACTIVE. Standing down on two devices at once used to
+      // write two different endedAt values onto one row and enqueue two
+      // driver.duty.completed events carrying two different durations for one
+      // shift — and duty time is what pay and compliance are worked out from.
+      const { count } = await tx.driverDuty.updateMany({
+        where: { id: active!.id, companyId, status: 'ACTIVE' },
+        data: { status: 'COMPLETED', endedAt, note: note ?? active!.note },
       });
-      await tx.driver.update({ where: { id: driverId }, data: { status: 'OFFLINE' } });
+      if (count === 0) {
+        // Lost the race. The winner's end time is the truth, and this call did
+        // not end anything, so it must not report a duration it never recorded.
+        throw new ConflictException('This shift was already ended.');
+      }
+      // Re-read rather than trusting the values we tried to write: the row now
+      // holds what actually landed.
+      const duty = await tx.driverDuty.findUniqueOrThrow({ where: { id: active!.id } });
+      await tx.driver.updateMany({ where: { id: driverId, companyId }, data: { status: 'OFFLINE' } });
       await this.outbox.enqueue(tx, companyId, 'driver.duty.completed', {
         dutyId: duty.id, driverId, mode: duty.mode, autoEnded: false,
         durationMinutes: dutyMinutes(duty, endedAt),
