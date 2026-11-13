@@ -3,6 +3,7 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { CommercialAnalyticsService } from './commercial-analytics.service';
 import { TripTruthService } from './trip-truth.service';
 import { ProfitabilitySnapshotService } from './profitability-snapshot.service';
+import { RevenueForecastService } from './revenue-forecast.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { RequireFeature } from '../billing/require-feature.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -24,6 +25,7 @@ export class CommercialAnalyticsController {
     private readonly svc: CommercialAnalyticsService,
     private readonly tripTruth: TripTruthService,
     private readonly snapshots: ProfitabilitySnapshotService,
+    private readonly forecasts: RevenueForecastService,
   ) {}
 
   /** GET /commercial-analytics/config — cost model configuration */
@@ -194,5 +196,42 @@ export class CommercialAnalyticsController {
   @Get('snapshots/clients')
   listClientSnapshots(@CurrentUser() u: any, @Query('period') period?: string) {
     return this.snapshots.clientSnapshots(u.companyId, period);
+  }
+  // ── Revenue forecasts ───────────────────────────────────────────────────
+  // A forecast is a claim about the future, so these endpoints report the
+  // basis and the interval alongside the number. Below three months of
+  // recognised revenue the generate route returns a refusal rather than a
+  // projection.
+
+  /** POST /commercial-analytics/forecasts — generate the forecast for the month after `asOf` */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
+  @Post('forecasts')
+  generateForecast(@CurrentUser() u: any, @Body() body?: { asOfPeriod?: string }) {
+    return this.forecasts.generate(u.companyId, body?.asOfPeriod);
+  }
+
+  /** POST /commercial-analytics/forecasts/score — backfill actuals on closed periods */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
+  @Post('forecasts/score')
+  scoreForecasts(@CurrentUser() u: any) {
+    return this.forecasts.score(u.companyId);
+  }
+
+  /** GET /commercial-analytics/forecasts — persisted forecasts, newest first */
+  @Get('forecasts')
+  listForecasts(@CurrentUser() u: any) {
+    return this.forecasts.list(u.companyId);
+  }
+
+  /** GET /commercial-analytics/forecasts/observed — the monthly series the forecast is fitted to */
+  @Get('forecasts/observed')
+  observedRevenue(@CurrentUser() u: any, @Query('through') through?: string) {
+    return this.forecasts.observed(u.companyId, through);
+  }
+
+  /** GET /commercial-analytics/forecasts/pipeline — accepted quotes not yet invoiced */
+  @Get('forecasts/pipeline')
+  forecastPipeline(@CurrentUser() u: any) {
+    return this.forecasts.pipeline(u.companyId);
   }
 }
