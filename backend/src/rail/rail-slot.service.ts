@@ -426,8 +426,12 @@ export class RailSlotService {
       throw new BadRequestException(`Cannot submit ${app.applicationNumber}: ${r.blockers.join(' ')}`);
     }
     const updated = await this.prisma.withTenant(companyId, async (tx) => {
-      const u = await tx.railSlotApplication.update({
-        where: { id },
+      // Compare-and-set on DRAFT, the status the readiness gates were
+      // evaluated against. Submitting twice used to re-run the whole
+      // submission — new compliance snapshot, new `rail.slot.submitted`
+      // event — for an application that was already submitted.
+      const { count } = await tx.railSlotApplication.updateMany({
+        where: { id, companyId, status: app.status },
         data: {
           status: 'SUBMITTED', submittedAt: now, envelopeCheckStatus: r.envelope.status,
           envelopeCheck: r.envelope as unknown as Prisma.InputJsonValue, complianceSnapshot: r.compliance as unknown as Prisma.InputJsonValue,
@@ -438,6 +442,10 @@ export class RailSlotService {
           capacityCheck: r.capacity as unknown as Prisma.InputJsonValue,
         },
       });
+      if (count === 0) {
+        throw new ConflictException('This application was already submitted by someone else.');
+      }
+      const u = await tx.railSlotApplication.findFirstOrThrow({ where: { id, companyId } });
       await this.outbox.enqueue(tx, companyId, 'rail.slot.submitted', {
         applicationId: id, applicationNumber: app.applicationNumber, corridorCode: app.corridorCode,
         envelopeStatus: r.envelope.status, isDangerousGoods: app.isDangerousGoods,

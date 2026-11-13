@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, RailAttribution, RailChangeStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
@@ -304,7 +304,24 @@ export class RailChangeService {
     await this.assertEntitled(companyId);
     const req = await this.getOrThrow(companyId, id);
     if (!canChange(req.status, to)) throw new BadRequestException(`A change request cannot move from ${req.status} to ${to}.`);
-    const updated = await this.prisma.railSlotChangeRequest.update({ where: { id }, data: { ...patch(req), status: to } });
+    // The status write and its audit entry belong to one unit of work, and
+    // the write is compare-and-set on the status the guard accepted: a change
+    // request carries a consequence and a penalty, both of which are
+    // calculated from the state it moved FROM. Two operators acting at once
+    // used to both write, and the audit recorded a consequence computed
+    // against a state that no longer held.
+    const updated = await this.prisma.withTenant(companyId, async (tx) => {
+      const { count } = await tx.railSlotChangeRequest.updateMany({
+        where: { id, companyId, status: req.status },
+        data: { ...patch(req), status: to },
+      });
+      if (count === 0) {
+        throw new ConflictException(
+          `This change request was already moved from ${req.status} by someone else.`,
+        );
+      }
+      return tx.railSlotChangeRequest.findFirstOrThrow({ where: { id, companyId } });
+    });
     await this.record(companyId, actor, action, { type: RAIL_AUDIT_TARGET.CHANGE_REQUEST, id, name: req.requestNumber }, {
       from: req.status, to, consequence: updated.consequence, penaltyApplicable: updated.penaltyApplicable,
     });

@@ -239,6 +239,23 @@ export class RailTrainManifestService {
     }
 
     const next = await this.prisma.withTenant(companyId, async (tx) => {
+      // Claim the old revision BEFORE creating the new one.
+      //
+      // Creating first meant two concurrent amends each produced a manifest
+      // claiming to be revision N+1 of the same parent, and each marked the
+      // parent SUPERSEDED. The document that travels with the train then had
+      // two "next" revisions and nothing to say which one was authoritative.
+      // Claiming first means the loser creates nothing at all.
+      const { count } = await tx.railTrainManifest.updateMany({
+        where: { id: old.id, companyId, status: old.status },
+        data: { status: 'SUPERSEDED', supersededAt: new Date(), supersededById: actor.id },
+      });
+      if (count === 0) {
+        throw new ConflictException(
+          `This manifest was already amended from ${old.status} by someone else.`,
+        );
+      }
+
       const row = await tx.railTrainManifest.create({
         data: {
           companyId, manifestNumber: old.manifestNumber, revision: old.revision + 1,
@@ -266,10 +283,6 @@ export class RailTrainManifestService {
             },
           },
         },
-      });
-      await tx.railTrainManifest.update({
-        where: { id: old.id },
-        data: { status: 'SUPERSEDED', supersededAt: new Date(), supersededById: actor.id },
       });
       await this.outbox.enqueue(tx, companyId, 'rail.manifest.amended', {
         manifestNumber: old.manifestNumber, newRevision: row.revision, supersedesId: old.id,

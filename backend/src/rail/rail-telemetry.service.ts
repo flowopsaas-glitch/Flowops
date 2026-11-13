@@ -100,19 +100,36 @@ export class RailTelemetryService {
     const device = await this.deviceOrThrow(companyId, id);
     const before = device.status;
     const updated = await this.prisma.withTenant(companyId, async (tx) => {
-      const u = await tx.railDevice.update({
-        where: { id },
-        data: {
-          status: dto.status ?? undefined,
-          label: dto.label ?? undefined,
-          wagonNumber: dto.wagonNumber ?? undefined,
-          locoReference: dto.locoReference ?? undefined,
-          simRef: dto.simRef ?? undefined,
-          speedLimitKph: dto.speedLimitKph ?? undefined,
-          batteryThresholdPct: dto.batteryThresholdPct ?? undefined,
-          notes: dto.notes ?? undefined,
-        },
-      });
+      const data = {
+        status: dto.status ?? undefined,
+        label: dto.label ?? undefined,
+        wagonNumber: dto.wagonNumber ?? undefined,
+        locoReference: dto.locoReference ?? undefined,
+        simRef: dto.simRef ?? undefined,
+        speedLimitKph: dto.speedLimitKph ?? undefined,
+        batteryThresholdPct: dto.batteryThresholdPct ?? undefined,
+        notes: dto.notes ?? undefined,
+      };
+      let u;
+      if (dto.status && dto.status !== before) {
+        // A status change also emits an event, so it is compare-and-set on
+        // the status this call read. Two operators setting a device to
+        // different statuses used to both write and both publish — the
+        // tracker was told the device moved to a state it never settled in.
+        const { count } = await tx.railDevice.updateMany({
+          where: { id, companyId, status: before as any },
+          data,
+        });
+        if (count === 0) {
+          throw new ConflictException(
+            `This device was already moved from ${before} by someone else.`,
+          );
+        }
+        u = await tx.railDevice.findFirstOrThrow({ where: { id, companyId } });
+      } else {
+        // No status change, so no event: a plain update is correct here.
+        u = await tx.railDevice.update({ where: { id }, data });
+      }
       if (dto.status && dto.status !== before) {
         await this.outbox.enqueue(tx, companyId, 'rail.telemetry.device_status_changed', {
           deviceId: u.id, deviceCode: u.deviceCode, from: before, to: dto.status,

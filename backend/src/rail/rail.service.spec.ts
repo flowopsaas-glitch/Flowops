@@ -8,7 +8,7 @@
  * Wave 3 adds the dangerous-goods (DG) fields, the readiness summary on the list,
  * `getDangerousGoods`, status validation, and the dispatch gate (see the last block).
  */
-import { BadRequestException, ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { RailService } from './rail.service';
 import { RAIL_AUDIT_ACTION, RailActor } from './rail-audit';
@@ -76,6 +76,23 @@ function makeDb() {
         const row = db.consignments.find((c) => c.id === where.id);
         Object.assign(row, data);
         return { ...row };
+      }),
+      findFirstOrThrow: jest.fn(async ({ where, include }: any) => {
+        const row = db.consignments.find((c) => matches(c, where));
+        if (!row) throw new Error('No railConsignment found');
+        return include ? hydrate(row) : { ...row };
+      }),
+      /**
+       * Honours the WHOLE where-clause, including `status`.
+       *
+       * A fake that matched on the id alone would make every compare-and-set
+       * succeed, so the concurrency cases below could not fail — they would
+       * assert a guarantee this double does not model.
+       */
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const hits = db.consignments.filter((c) => matches(c, where));
+        for (const row of hits) Object.assign(row, data);
+        return { count: hits.length };
       }),
       groupBy: jest.fn(async () => []),
       aggregate: jest.fn(async () => ({ _sum: { tonnage: 0 } })),
@@ -702,6 +719,94 @@ describe('consignment lifecycle', () => {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Wave 3 — dangerous goods (RAIL-011)
+// ═══════════════════════════════════════════════════════════════════════════════
+/**
+ * A consignment's timeline is the operational record of where the load is. It
+ * and the consignment status must never disagree, and neither may be written
+ * twice for one move.
+ */
+describe('a consignment only moves from the state it was read in', () => {
+  it('cancel: leaves no timeline event when the consignment moved first', async () => {
+    const { svc, db, prisma, seedConsignment, audit } = makeService();
+    const c = seedConsignment({ status: 'LOADING' });
+
+    // Another operator advanced it after our read.
+    // withTenant is already a jest.fn here, so spyOn would re-wrap the same
+    // mock and capturing it first would capture the spy — infinite recursion.
+    // Reimplement it instead: same behaviour, plus the competing write.
+    jest.spyOn(prisma, 'withTenant').mockImplementation(async (_co: string, fn: any) => {
+      db.consignments.find((x: any) => x.id === c.id)!.status = 'DEPARTED';
+      return fn(prisma);
+    });
+
+    await expect(svc.cancel('A', c.id, MANAGER)).rejects.toThrow(ConflictException);
+
+    // The timeline must not claim a cancellation that did not happen.
+    expect(db.events).toEqual([]);
+    expect(audit.record).not.toHaveBeenCalled();
+    jest.restoreAllMocks();
+  });
+
+  it('cancel: is idempotent when the consignment is already cancelled', async () => {
+    const { svc, db, seedConsignment } = makeService();
+    const c = seedConsignment({ status: 'CANCELLED' });
+
+    const out = await svc.cancel('A', c.id, MANAGER);
+
+    expect(out.status).toBe('CANCELLED');
+    // A second cancel used to append a second event for one cancellation.
+    expect(db.events).toEqual([]);
+  });
+
+  it('cancel: constrains the write on the status it read', async () => {
+    const { svc, prisma, seedConsignment } = makeService();
+    const c = seedConsignment({ status: 'LOADING' });
+
+    await svc.cancel('A', c.id, MANAGER);
+
+    const call = prisma.railConsignment.updateMany.mock.calls[0][0];
+    expect(call.where).toMatchObject({ id: c.id, companyId: 'A', status: 'LOADING' });
+  });
+
+  it('cancel: records exactly one timeline event on a clean cancel', async () => {
+    const { svc, db, seedConsignment } = makeService();
+    const c = seedConsignment({ status: 'LOADING' });
+
+    await svc.cancel('A', c.id, MANAGER);
+
+    expect(db.events).toEqual([
+      expect.objectContaining({ consignmentId: c.id, status: 'CANCELLED' }),
+    ]);
+  });
+
+  it('advanceStatus: claims the status the gates were evaluated against', async () => {
+    const { svc, prisma, seedConsignment } = makeService();
+    const c = seedConsignment({ status: 'LOADING' });
+
+    await svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER);
+
+    const call = prisma.railConsignment.updateMany.mock.calls[0][0];
+    expect(call.where).toMatchObject({ id: c.id, companyId: 'A', status: 'LOADING' });
+  });
+
+  it('advanceStatus: appends no timeline event when it loses the race', async () => {
+    const { svc, db, prisma, seedConsignment, audit } = makeService();
+    const c = seedConsignment({ status: 'LOADING' });
+
+    // Two depots reporting at once: the other one got there first.
+    jest.spyOn(prisma, 'withTenant').mockImplementation(async (_co: string, fn: any) => {
+      db.consignments.find((x: any) => x.id === c.id)!.status = 'DEPARTED';
+      return fn(prisma);
+    });
+
+    await expect(svc.advanceStatus('A', c.id, 'DEPARTED', MANAGER)).rejects.toThrow(ConflictException);
+
+    expect(db.events).toEqual([]);
+    expect(audit.record).not.toHaveBeenCalled();
+    jest.restoreAllMocks();
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 describe('dangerous goods', () => {
   const DG_FULL = {

@@ -40,6 +40,12 @@ function make(opts: { entitled?: boolean } = {}) {
   const slotApps = new FakeTable('sa');
   const reports = new FakeTable('hr');
   const prisma = {
+    // A change request carries a consequence and a penalty computed from the
+    // state it moved FROM, so the transition has to be one unit of work. This
+    // runs the callback against the same client — the tables are shared, so
+    // the write is visible to the assertions below.
+    withTenant: async (_companyId: string, fn: any, _opts?: any) => fn(prisma),
+    $transaction: async (fn: any) => fn(prisma),
     railSlotChangeRequest: requests, railCancellationCode: codes, railConsignment: consignments,
     railSlotApplication: slotApps, railHandshakeReport: reports,
   };
