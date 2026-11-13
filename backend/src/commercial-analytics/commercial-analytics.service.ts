@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GROQ_MODEL } from '../ai/groq-model';
 import { withCompanyId } from '../common/security/tenant.util';
 import { Money } from '../common/money.util';
+import { LaneProfitabilityService } from './lane-profitability.service';
 
 @Injectable()
 export class CommercialAnalyticsService {
@@ -12,6 +13,7 @@ export class CommercialAnalyticsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly lanes: LaneProfitabilityService,
   ) {}
 
 
@@ -207,81 +209,34 @@ export class CommercialAnalyticsService {
   // LANE PROFITABILITY ANALYSIS
   // ═══════════════════════════════════════════════════════════════════════
 
+  /**
+   * GET /commercial-analytics/lanes — lane profitability.
+   *
+   * Cost comes from DeliveryCostAllocation wherever the Trip Truth engine has
+   * recorded it, and from the company's config rates only where it has not.
+   * The two are never averaged together — see LaneProfitabilityService for why.
+   *
+   * `basis` on the response, and on every lane, says which one is in play, so
+   * the page can never present a modelled figure as a measured one.
+   */
   async getLaneProfitability(companyId: string, period?: string) {
     const targetPeriod = period || this.currentPeriod();
     const cfg = await this.getConfig(companyId);
-    const { start, end } = this.periodRange(targetPeriod);
 
-    // Get delivered waybills with zone info (derived from addresses)
-    const waybills = await this.prisma.waybill.findMany({
-      where: { companyId, status: 'DELIVERED', createdAt: { gte: start, lt: end } },
-      select: {
-        id: true, totalAmount: true, senderAddress: true,
-        recipientAddress: true, weight: true,
-      },
-    });
-
-    // Derive zone from city (last part of address before postal code)
-    const extractZone = (addr: string): string => {
-      if (!addr) return 'Unknown';
-      const parts = addr.split(',').map(p => p.trim());
-      // Try to get city (usually 2nd-to-last part)
-      if (parts.length >= 3) return parts[parts.length - 2] || 'Unknown';
-      if (parts.length >= 2) return parts[parts.length - 1] || 'Unknown';
-      return parts[0]?.slice(0, 20) || 'Unknown';
-    };
-
-    const laneMap: Record<string, any> = {};
-    const avgCostPerDel = (cfg.fuelCostPerKm * cfg.avgKmPerDelivery)
-      + (cfg.driverHourlyCost * (cfg.avgDeliveryMinutes / 60))
-      + cfg.vehicleCostPerKm * cfg.avgKmPerDelivery
-      + cfg.overheadPerDelivery;
-
-    for (const wb of waybills) {
-      const from = extractZone(wb.senderAddress);
-      const to = extractZone(wb.recipientAddress);
-      const key = `${from}→${to}`;
-
-      if (!laneMap[key]) {
-        laneMap[key] = { fromZone: from, toZone: to, count: 0, revenue: 0 };
-      }
-      laneMap[key].count += 1;
-      laneMap[key].revenue += (wb.totalAmount || 0);
-    }
-
-    const lanes = Object.values(laneMap).map((l: any) => {
-      const cost = l.count * avgCostPerDel;
-      const profit = l.revenue - cost;
-      const margin = l.revenue > 0
-        ? Math.round((profit / l.revenue) * 1000) / 10 : 0;
-
-      let signal = 'OPTIMAL';
-      if (margin < cfg.minMarginPct) signal = 'UNDERPRICED';
-      else if (margin > cfg.targetMarginPct + 20) signal = 'OVERPRICED';
-      if (l.count < 5) signal = 'LOW_VOLUME';
-
-      return {
-        fromZone: l.fromZone,
-        toZone: l.toZone,
-        deliveries: l.count,
-        revenue: Math.round(l.revenue),
-        avgRevenue: l.count > 0
-          ? Money.round(l.revenue / l.count) : 0,
-        estimatedCost: Math.round(cost),
-        grossProfit: Math.round(profit),
-        marginPct: margin,
-        signal,
-      };
-    }).sort((a, b) => b.revenue - a.revenue);
+    const { basis, lanes, totals } = await this.lanes.aggregate(companyId, targetPeriod, cfg);
 
     return {
       period: targetPeriod,
       currency: 'ZAR',
+      basis,
+      coveragePct: totals.coveragePct,
+      measuredDeliveries: totals.measuredDeliveries,
       totalLanes: lanes.length,
-      underpriced: lanes.filter(l => l.signal === 'UNDERPRICED').length,
-      optimal: lanes.filter(l => l.signal === 'OPTIMAL').length,
-      overpriced: lanes.filter(l => l.signal === 'OVERPRICED').length,
+      underpriced: lanes.filter((l) => l.signal === 'UNDERPRICED').length,
+      optimal: lanes.filter((l) => l.signal === 'OPTIMAL').length,
+      overpriced: lanes.filter((l) => l.signal === 'OVERPRICED').length,
       lanes: lanes.slice(0, 30),
+      totals,
     };
   }
 
