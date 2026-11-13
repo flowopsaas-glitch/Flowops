@@ -274,12 +274,31 @@ export class RailService {
 
   async cancel(companyId: string, id: string, actor: RailActor) {
     const existing = await this.get(companyId, id);
-    await this.prisma.railConsignmentEvent.create({
-      data: { consignmentId: id, status: 'CANCELLED', note: 'Consignment cancelled' },
-    });
-    const cancelled = await this.prisma.railConsignment.update({
-      where: { id },
-      data: { status: 'CANCELLED' },
+    if (existing.status === 'CANCELLED') return existing;
+
+    // The timeline event and the status move together, or not at all.
+    //
+    // These were two writes with no enclosing transaction, so a crash between
+    // them left the consignment's timeline claiming it was cancelled when the
+    // consignment itself was not — and a second cancel appended a second
+    // event. `advanceStatus` in this same file already did it properly; this
+    // was the outlier.
+    const cancelled = await this.prisma.withTenant(companyId, async (tx) => {
+      // Claim first, then write the event: a caller who loses the race leaves
+      // nothing behind.
+      const { count } = await tx.railConsignment.updateMany({
+        where: { id, companyId, status: existing.status as any },
+        data: { status: 'CANCELLED' },
+      });
+      if (count === 0) {
+        throw new ConflictException(
+          'This consignment was already cancelled or advanced by someone else — nothing was cancelled.',
+        );
+      }
+      await tx.railConsignmentEvent.create({
+        data: { consignmentId: id, status: 'CANCELLED', note: 'Consignment cancelled' },
+      });
+      return tx.railConsignment.findFirstOrThrow({ where: { id, companyId } });
     });
     await this.record(
       companyId, actor, RAIL_AUDIT_ACTION.CONSIGNMENT_CANCELLED,
@@ -341,6 +360,19 @@ export class RailService {
     if (nextStatus === 'ARRIVED' && !c.actualArrival) patch.actualArrival = new Date();
 
     const updated = await this.prisma.withTenant(companyId, async (tx) => {
+      // Compare-and-set on the status the gates above were evaluated against.
+      // Two depots reporting arrival and departure at once used to both write
+      // and both append a timeline event, so the consignment's history showed
+      // a move that never happened.
+      const { count } = await tx.railConsignment.updateMany({
+        where: { id, companyId, status: c.status as any },
+        data: patch,
+      });
+      if (count === 0) {
+        throw new ConflictException(
+          `This consignment was already moved from ${c.status} by someone else.`,
+        );
+      }
       await tx.railConsignmentEvent.create({
         data: {
           consignmentId: id,
@@ -349,7 +381,7 @@ export class RailService {
           location: location ?? null,
         },
       });
-      return tx.railConsignment.update({ where: { id }, data: patch });
+      return tx.railConsignment.findFirstOrThrow({ where: { id, companyId } });
     });
 
     // Surface in AI Control Tower (best-effort — never blocks the transition).

@@ -107,6 +107,44 @@ describe('manifest transitions', () => {
     spy.mockRestore();
   });
 
+  describe('amending a manifest', () => {
+    it('claims the old revision before creating the next one', async () => {
+      const { svc, manifests, seedManifest } = make();
+      // FakeTable does not resolve `include`, so the wagon list the amend
+      // copies from is seeded on the row.
+      const m = seedManifest({ status: 'ISSUED', revision: 1, wagons: [] });
+
+      await svc.amend('A', m.id, { note: 'Wagon count corrected' } as any, MANAGER);
+
+      // The parent is superseded and exactly one new revision exists.
+      expect(manifests.rows.find((r: any) => r.id === m.id)!.status).toBe('SUPERSEDED');
+      const revisions = manifests.rows.filter((r: any) => r.manifestNumber === m.manifestNumber);
+      expect(revisions).toHaveLength(2);
+      expect(revisions.filter((r: any) => r.revision === 2)).toHaveLength(1);
+    });
+
+    it('creates no revision when another operator amended first', async () => {
+      const { svc, prisma, manifests, seedManifest, outbox } = make();
+      const m = seedManifest({ status: 'ISSUED', revision: 1, wagons: [] });
+
+      const original = prisma.withTenant;
+      jest.spyOn(prisma, 'withTenant').mockImplementation(async (c: string, fn: any) => {
+        manifests.rows.find((r: any) => r.id === m.id)!.status = 'CLOSED';
+        return original(c, fn);
+      });
+
+      await expect(
+        svc.amend('A', m.id, { note: 'Wagon count corrected' } as any, MANAGER),
+      ).rejects.toThrow(ConflictException);
+
+      // Two concurrent amends used to produce two manifests both claiming to
+      // be revision 2 of the same parent, with nothing to say which was real.
+      const revisions = manifests.rows.filter((r: any) => r.manifestNumber === m.manifestNumber);
+      expect(revisions).toHaveLength(1);
+      expect(outbox.enqueue).not.toHaveBeenCalled();
+    });
+  });
+
   it('will not cancel another tenant’s manifest', async () => {
     const { svc, seedManifest } = make();
     const m = seedManifest({ companyId: 'B', status: 'ISSUED' });

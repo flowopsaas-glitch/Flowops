@@ -1,5 +1,5 @@
 import {
-  BadRequestException, ForbiddenException, Injectable, NotFoundException,
+  BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException,
 } from '@nestjs/common';
 import {
   HandoffEvidenceStatus, HandoffEvidenceType, HandoffReadinessStatus, IntermodalLegMode,
@@ -195,9 +195,19 @@ export class RailHandoffService {
     if (evidence.status !== HandoffEvidenceStatus.PENDING) {
       throw new BadRequestException('Only pending evidence can be verified');
     }
-    const updated = await this.prisma.railHandoffEvidence.update({
-      where: { id: evidenceId },
-      data: { status: HandoffEvidenceStatus.VERIFIED, verifiedAt: new Date() },
+    // Compare-and-set on PENDING, and the first tenant context this write has
+    // had. Evidence is verified once — a second verification used to
+    // overwrite `verifiedAt` and emit a second event, so the handover record
+    // showed the document verified after the fact.
+    const updated = await this.prisma.withTenant(companyId, async (tx) => {
+      const { count } = await tx.railHandoffEvidence.updateMany({
+        where: { id: evidenceId, readinessId, companyId, status: HandoffEvidenceStatus.PENDING },
+        data: { status: HandoffEvidenceStatus.VERIFIED, verifiedAt: new Date() },
+      });
+      if (count === 0) {
+        throw new ConflictException('This evidence was already verified by someone else.');
+      }
+      return tx.railHandoffEvidence.findFirstOrThrow({ where: { id: evidenceId, companyId } });
     });
     await this.auditTransition('rail.handoff.evidence.verified', companyId, readinessId, {
       evidenceId,

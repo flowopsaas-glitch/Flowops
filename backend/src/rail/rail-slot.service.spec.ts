@@ -498,6 +498,34 @@ describe('a slot application only moves from the state it was read in', () => {
     expect(spy).toHaveBeenCalledWith('A', expect.any(Function));
     spy.mockRestore();
   });
+
+  it('submit: claims DRAFT rather than re-running the submission', async () => {
+    const h: H = make();
+    const app = h.draftReady();
+
+    await h.svc.submit('A', app.id, MANAGER, NOW);
+
+    const call = h.apps.updateMany.mock.calls.find((c: any[]) => c[0].data?.status === 'SUBMITTED');
+    expect(call[0].where).toMatchObject({ id: app.id, companyId: 'A', status: 'DRAFT' });
+  });
+
+  it('submit: emits no event when another operator submitted first', async () => {
+    const h: H = make();
+    const app = h.draftReady();
+    const outbox = (h.svc as any).outbox;
+
+    const original = h.prisma.withTenant;
+    jest.spyOn(h.prisma, 'withTenant').mockImplementation(async (c: string, fn: any) => {
+      h.apps.rows.find((r: any) => r.id === app.id)!.status = 'SUBMITTED';
+      return original(c, fn);
+    });
+
+    await expect(h.svc.submit('A', app.id, MANAGER, NOW)).rejects.toThrow(ConflictException);
+
+    // Submitting twice used to re-run readiness and publish a second
+    // `rail.slot.submitted` with a fresh compliance snapshot.
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

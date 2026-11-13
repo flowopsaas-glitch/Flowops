@@ -4,7 +4,7 @@ import {
   HandoffReadinessStatus,
   IntermodalLegMode,
 } from '@prisma/client';
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { RailHandoffService } from './rail-handoff.service';
 import { AddHandoffEvidenceDto, CreateHandoffReadinessDto } from './dto/handoff.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -24,6 +24,8 @@ function setup(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
   const prisma = {
+    withTenant: jest.fn(async (_companyId: string, fn: any) => fn(prisma)),
+    $transaction: jest.fn(async (fn: any) => fn(prisma)),
     railConsignment: { findFirst: jest.fn().mockResolvedValue({ id: 'consignment-1' }) },
     intermodalLeg: { findFirst: jest.fn().mockResolvedValue({ id: 'leg-1' }) },
     warehouse: { findFirst: jest.fn().mockResolvedValue({ id: 'warehouse-1' }) },
@@ -43,6 +45,19 @@ function setup(overrides: Record<string, unknown> = {}) {
       }),
       create: jest.fn().mockResolvedValue({ id: 'evidence-1' }),
       update: jest.fn().mockResolvedValue({ id: 'evidence-1', status: HandoffEvidenceStatus.VERIFIED }),
+      findFirstOrThrow: jest.fn().mockResolvedValue({
+        id: 'evidence-1', status: HandoffEvidenceStatus.VERIFIED,
+      }),
+      /**
+       * Honours the whole where-clause, including `status`. A double that
+       * matched on the id alone would make every compare-and-set succeed and
+       * the concurrency cases below could not fail.
+       */
+      updateMany: jest.fn(async ({ where }: any) => {
+        const row = { id: 'evidence-1', readinessId: 'readiness-1', companyId: 'tenant-1', status: 'PENDING' };
+        const ok = Object.entries(where ?? {}).every(([k, v]) => row[k] === v);
+        return { count: ok ? 1 : 0 };
+      }),
     },
   } as unknown as PrismaService;
   const billing = { hasFeature: jest.fn().mockResolvedValue(true) } as unknown as BillingService;
@@ -51,6 +66,40 @@ function setup(overrides: Record<string, unknown> = {}) {
 }
 
 describe('RailHandoffService', () => {
+  /**
+   * Evidence is verified once. A second verification used to overwrite
+   * `verifiedAt` and emit a second event, so the handover record showed the
+   * document verified after the fact.
+   */
+  describe('verifying handoff evidence', () => {
+    it('claims PENDING, the state the guard was checked against', async () => {
+      const { service, prisma } = setup();
+      await service.verifyEvidence('tenant-1', 'readiness-1', 'evidence-1');
+
+      const call = (prisma.railHandoffEvidence.updateMany as jest.Mock).mock.calls[0][0];
+      expect(call.where).toMatchObject({
+        id: 'evidence-1', readinessId: 'readiness-1', companyId: 'tenant-1',
+        status: HandoffEvidenceStatus.PENDING,
+      });
+    });
+
+    it('runs the verification inside a tenant context', async () => {
+      const { service, prisma } = setup();
+      await service.verifyEvidence('tenant-1', 'readiness-1', 'evidence-1');
+      expect(prisma.withTenant).toHaveBeenCalledWith('tenant-1', expect.any(Function));
+    });
+
+    it('refuses when the evidence was already verified', async () => {
+      const { service, prisma } = setup();
+      (prisma.railHandoffEvidence.updateMany as jest.Mock).mockResolvedValueOnce({ count: 0 });
+
+      await expect(
+        service.verifyEvidence('tenant-1', 'readiness-1', 'evidence-1'),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+
   it('scopes consignment lookup to the tenant and rejects a foreign consignment', async () => {
     const { service, prisma } = setup();
     (prisma.railConsignment.findFirst as jest.Mock).mockResolvedValue(null);

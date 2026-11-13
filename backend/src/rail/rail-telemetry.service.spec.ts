@@ -98,6 +98,56 @@ describe('alert transitions', () => {
     expect(alerts.rows.find((r: any) => r.id === a.id)!.status).toBe('RESOLVED');
   });
 
+  describe('device status changes', () => {
+    it('claims the status it read when the change is published', async () => {
+      const { svc, prisma, devices } = make();
+      const d = devices.seed({ companyId: 'A', deviceCode: 'DEV-1', status: 'ACTIVE', kind: 'GPS' });
+
+      await svc.updateDevice('A', d.id, { status: 'MAINTENANCE' } as any, MANAGER);
+
+      const call = prisma.railDevice.updateMany.mock.calls[0][0];
+      expect(call.where).toMatchObject({ id: d.id, companyId: 'A', status: 'ACTIVE' });
+    });
+
+    it('emits no event when another operator changed the status first', async () => {
+      const { svc, prisma, devices, outbox } = make();
+      const d = devices.seed({ companyId: 'A', deviceCode: 'DEV-1', status: 'ACTIVE', kind: 'GPS' });
+
+      const original = prisma.withTenant;
+      jest.spyOn(prisma, 'withTenant').mockImplementation(async (c: string, fn: any) => {
+        devices.rows.find((r: any) => r.id === d.id)!.status = 'RETIRED';
+        return original(c, fn);
+      });
+
+      await expect(
+        svc.updateDevice('A', d.id, { status: 'MAINTENANCE' } as any, MANAGER),
+      ).rejects.toThrow(ConflictException);
+
+      // The tracker must not be told the device moved to a state it never
+      // settled in.
+      expect(outbox.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('emits exactly one event on a clean status change', async () => {
+      const { svc, devices, outbox } = make();
+      const d = devices.seed({ companyId: 'A', deviceCode: 'DEV-1', status: 'ACTIVE', kind: 'GPS' });
+
+      await svc.updateDevice('A', d.id, { status: 'MAINTENANCE' } as any, MANAGER);
+
+      expect(outbox.enqueue).toHaveBeenCalledTimes(1);
+      expect(outbox.enqueue.mock.calls[0][2]).toBe('rail.telemetry.device_status_changed');
+    });
+
+    it('does not emit an event when the status is unchanged', async () => {
+      const { svc, devices, outbox } = make();
+      const d = devices.seed({ companyId: 'A', deviceCode: 'DEV-1', status: 'ACTIVE', kind: 'GPS' });
+
+      await svc.updateDevice('A', d.id, { status: 'ACTIVE' } as any, MANAGER);
+
+      expect(outbox.enqueue).not.toHaveBeenCalled();
+    });
+  });
+
   it('will not touch another tenant’s alert', async () => {
     const { svc, seedAlert } = make();
     const a = seedAlert({ companyId: 'B', status: 'OPEN' });
