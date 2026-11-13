@@ -662,10 +662,6 @@ export class ProcessControlService {
     }
 
     const now = new Date();
-    const stepInstance = await this.prisma.processStepInstance.findFirst({
-      where: { instanceId, stepDefinitionId: step.id, status: { in: ['PENDING', 'IN_PROGRESS'] as any } },
-      orderBy: { attempt: 'desc' },
-    });
 
     const steps = instance.version.steps;
     const requestedNext = dto.nextStepCode
@@ -681,10 +677,43 @@ export class ProcessControlService {
       throw new BadRequestException(`Step ${step.code} points at unknown successor ${resolvedCode}`);
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      if (stepInstance) {
-        await tx.processStepInstance.update({
-          where: { id: stepInstance.id },
+    await this.prisma.withTenant(companyId, async (tx) => {
+      // Read the mutable state INSIDE the transaction. It used to be read
+      // before it, so two operators completing the same step at once both saw
+      // the same PENDING row and both advanced the process — the process then
+      // continued down two branches at once, each unaware of the other.
+      //
+      // This is also the first tenant context any part of this module
+      // establishes, so row-level security backs the filters below instead of
+      // relying on them alone.
+      const liveStepInstance = await tx.processStepInstance.findFirst({
+        where: {
+          instanceId,
+          companyId,
+          stepDefinitionId: step.id,
+          status: { in: ['PENDING', 'IN_PROGRESS'] as any },
+        },
+        orderBy: { attempt: 'desc' },
+      });
+
+      // The instance status was previously read outside the transaction and
+      // written back inside it, so a block or unblock landing in between was
+      // silently overwritten with the stale value.
+      const liveInstance = await tx.processInstance.findFirst({
+        where: { id: instanceId, companyId },
+        select: { status: true },
+      });
+      const currentStatus = liveInstance?.status ?? instance.status;
+
+      if (liveStepInstance) {
+        // Compare-and-set: only the caller that actually moves this row out of
+        // PENDING/IN_PROGRESS may advance the process.
+        const { count } = await tx.processStepInstance.updateMany({
+          where: {
+            id: liveStepInstance.id,
+            companyId,
+            status: { in: ['PENDING', 'IN_PROGRESS'] as any },
+          },
           data: {
             status: outcome === 'SUCCESS' ? 'COMPLETED' : 'FAILED',
             completedAt: now,
@@ -693,22 +722,27 @@ export class ProcessControlService {
             notes: dto.notes ?? null,
           },
         });
+        if (count === 0) {
+          throw new ConflictException(
+            `Step ${step.code} was already completed by another operator.`,
+          );
+        }
       }
 
       if (outcome !== 'SUCCESS' && !resolvedCode) {
         // A failure/exception with nowhere to go blocks the instance so a human
         // notices instead of the process silently stalling.
-        await tx.processInstance.update({
-          where: { id: instanceId },
+        await tx.processInstance.updateMany({
+          where: { id: instanceId, companyId },
           data: { status: 'BLOCKED', blockedAt: now },
         });
         return;
       }
 
       if (!nextStep) {
-        await tx.processInstance.update({
-          where: { id: instanceId },
-          data: { status: instance.status === 'BLOCKED' ? 'IN_PROGRESS' : instance.status, currentStepId: null },
+        await tx.processInstance.updateMany({
+          where: { id: instanceId, companyId },
+          data: { status: currentStatus === 'BLOCKED' ? 'IN_PROGRESS' : currentStatus, currentStepId: null },
         });
         return;
       }
@@ -716,7 +750,7 @@ export class ProcessControlService {
       const loopBack = steps.findIndex((s) => s.code === nextStep.code) <=
         steps.findIndex((s) => s.code === step.code);
       const priorAttempts = await tx.processStepInstance.count({
-        where: { instanceId, stepDefinitionId: nextStep.id },
+        where: { instanceId, companyId, stepDefinitionId: nextStep.id },
       });
 
       await tx.processStepInstance.create({
@@ -735,11 +769,15 @@ export class ProcessControlService {
         },
       });
 
-      await tx.processInstance.update({
-        where: { id: instanceId },
+      await tx.processInstance.updateMany({
+        where: { id: instanceId, companyId },
         data: {
           currentStepId: nextStep.id,
-          status: instance.status === 'BLOCKED' ? 'IN_PROGRESS' : 'IN_PROGRESS',
+          // Both arms of the old ternary were 'IN_PROGRESS', so the stale read
+          // it consulted never changed the outcome. Written as what it does;
+          // the interesting question is whether it *should* clear BLOCKED, and
+          // that belongs to whoever owns the loop-back semantics, not here.
+          status: 'IN_PROGRESS',
         },
       });
 
@@ -800,10 +838,19 @@ export class ProcessControlService {
       if (!canTransitionInstance(instance.status as ProcessInstanceStatus, 'BLOCKED')) {
         throw new ConflictException(`Cannot block an instance that is ${instance.status}`);
       }
-      await this.prisma.processInstance.update({
-        where: { id: instanceId },
+      // Compare-and-set on the status the transition check was made against.
+      // Previously a plain update on the id alone, so an instance that had
+      // moved on (unblocked, completed, abandoned) between the check and the
+      // write was forced back to BLOCKED.
+      const { count } = await this.prisma.processInstance.updateMany({
+        where: { id: instanceId, companyId, status: instance.status as any },
         data: { status: 'BLOCKED', blockedAt: new Date() },
       });
+      if (count === 0) {
+        throw new ConflictException(
+          'The instance changed while the incident was being raised — no block was applied',
+        );
+      }
     }
 
     await this.audit(companyId, actor, {
@@ -833,8 +880,11 @@ export class ProcessControlService {
     const targetStatus = dto.status ?? 'RESOLVED';
     const now = new Date();
 
-    const updated = await this.prisma.processIncident.update({
-      where: { id: incidentId },
+    // Compare-and-set on the status this call observed, so two operators
+    // resolving the same incident cannot both stamp a resolution — the second
+    // one reports a resolution it never wrote.
+    const { count } = await this.prisma.processIncident.updateMany({
+      where: { id: incidentId, companyId, status: incident.status as any },
       data: {
         status: targetStatus,
         resolution: dto.resolution,
@@ -843,19 +893,30 @@ export class ProcessControlService {
         resolvedAt: targetStatus === 'RESOLVED' ? now : null,
       },
     });
+    if (count === 0) {
+      throw new ConflictException(
+        'This incident was already resolved by another operator.',
+      );
+    }
+    const updated = await this.prisma.processIncident.findFirst({
+      where: { id: incidentId, companyId },
+    });
 
     // Unblock the instance only when no blocking incident remains open.
     if (incident.isBlocking && targetStatus === 'RESOLVED') {
       const stillBlocking = await this.prisma.processIncident.count({
         where: {
+          // companyId was absent here: an instance stayed blocked because a
+          // *different* company happened to have open blocking incidents.
+          companyId,
           instanceId: incident.instanceId,
           isBlocking: true,
           status: { in: ['OPEN', 'INVESTIGATING', 'ESCALATED'] as any },
         },
       });
       if (stillBlocking === 0 && incident.instance.status === 'BLOCKED') {
-        await this.prisma.processInstance.update({
-          where: { id: incident.instanceId },
+        await this.prisma.processInstance.updateMany({
+          where: { id: incident.instanceId, companyId, status: 'BLOCKED' },
           data: { status: 'IN_PROGRESS', blockedAt: null },
         });
       }
@@ -951,7 +1012,11 @@ export class ProcessControlService {
     });
     if (!instance) throw new NotFoundException('Process instance not found');
 
-    const existing = await this.prisma.processOutcome.findUnique({ where: { instanceId } });
+    // Scoped to the caller: an unscoped lookup here let one company's outcome
+    // silently satisfy another company's record call.
+    const existing = await this.prisma.processOutcome.findFirst({
+      where: { instanceId, companyId },
+    });
     if (existing) return existing;
 
     const completedStepIds = new Set(
@@ -984,8 +1049,26 @@ export class ProcessControlService {
       completedAt,
     });
 
-    const outcome = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.processOutcome.create({
+    const outcome = await this.prisma.withTenant(companyId, async (tx) => {
+      // Claim the instance FIRST, compare-and-set on the status the gate above
+      // was evaluated against. The gate ran before the transaction opened, so a
+      // step completed or an incident raised in that window used to be closed
+      // over silently.
+      //
+      // Claiming before the outcome row is written also means a lost race
+      // leaves nothing behind; writing the row first orphaned it, because the
+      // throw that followed could not undo a row already inserted.
+      const { count } = await tx.processInstance.updateMany({
+        where: { id: instanceId, companyId, status: instance.status as any },
+        data: { status: 'COMPLETED', completedAt, currentStepId: null },
+      });
+      if (count === 0) {
+        throw new ConflictException(
+          'The instance changed while the outcome was being recorded — no outcome was written',
+        );
+      }
+
+      return tx.processOutcome.create({
         data: {
           companyId,
           instanceId,
@@ -1004,13 +1087,6 @@ export class ProcessControlService {
           completedAt,
         },
       });
-
-      await tx.processInstance.update({
-        where: { id: instanceId },
-        data: { status: 'COMPLETED', completedAt, currentStepId: null },
-      });
-
-      return created;
     });
 
     await this.audit(companyId, actor, {
