@@ -1,0 +1,45 @@
+-- manifest_waybills: record when a parcel was scanned onto a vehicle.
+--
+-- WHAT IS MISSING TODAY
+--
+-- `manifest_waybills` records what a vehicle is *scheduled* to carry. It has no
+-- record of what it was *observed* to carry. The only signal that a parcel was
+-- loaded is `waybills.status` flipping to IN_TRANSIT, and that status is a
+-- property of the parcel, not of the manifest — so two situations that need
+-- opposite responses look identical to the load-scan endpoint:
+--
+--   1. An operator re-scans a parcel they already loaded onto this vehicle.
+--      Routinely happens — a beep is missed, or a second operator runs a
+--      verification pass. It must be idempotent and must not error, or
+--      operators learn to work around the check.
+--
+--   2. A parcel already in transit on ANOTHER vehicle is scanned here. That is
+--      one parcel on two trucks: the load plan no longer matches either
+--      vehicle, tracing breaks, and one customer's goods are somewhere they
+--      were never manifested. It must be refused.
+--
+-- Both present as `status = 'IN_TRANSIT'`. Nothing in the schema can tell them
+-- apart, so the endpoint cannot either.
+--
+-- THE WIDER GAP
+--
+-- `src/manifests/load-scan.controller.ts` set `status: 'IN_TRANSIT'` on any
+-- waybill it could find by tracking number, with no check on the parcel's
+-- current state. A DELIVERED parcel was put back in transit by a stray scan; a
+-- CANCELLED one was resurrected. The manifest was also never checked against
+-- the caller's company, nor against whether the vehicle had already left —
+-- unlike `completeLoad` in the same file, which scopes it correctly.
+--
+-- THE COLUMN
+--
+-- Nullable, so it is additive: every existing row is "not yet scanned", which
+-- is true of every manifest that predates the scan trail and false of none. No
+-- backfill, no default, no table rewrite, no constraint that existing data
+-- could violate. Safe to apply while manifests are being loaded.
+--
+-- Not backfilled from `waybills.status`: a parcel in transit was not
+-- necessarily scanned onto the manifest we happen to be looking at, and
+-- inventing a timestamp would make the audit trail say something we do not
+-- know. Absence of a record is the honest state for everything predating it.
+
+ALTER TABLE "manifest_waybills" ADD COLUMN "scannedAt" TIMESTAMP(3);

@@ -1515,6 +1515,23 @@ model ManifestWaybill {
 
   sortOrder Int @default(0)
 
+  // When this parcel was physically scanned onto THIS vehicle. Null until the
+  // load scan confirms it.
+  //
+  // Without it the only signal that a parcel was loaded is the waybill's own
+  // status flipping to IN_TRANSIT — which is global to the parcel, not per
+  // manifest. That makes two different situations indistinguishable:
+  //
+  //   - an operator re-scans a parcel they already loaded on this vehicle
+  //     (routine, and must stay idempotent);
+  //   - a parcel already in transit on ANOTHER vehicle is scanned here
+  //     (one parcel on two trucks — a load-control failure).
+  //
+  // Both present as `status === IN_TRANSIT`. Stamping the link is what
+  // separates them, and is the audit trail for what was actually put on the
+  // vehicle rather than what was scheduled to be.
+  scannedAt DateTime?
+
   @@id([manifestId, waybillId])
   @@map("manifest_waybills")
 }
