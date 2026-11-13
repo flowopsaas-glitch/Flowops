@@ -4,6 +4,7 @@ import { CommercialAnalyticsService } from './commercial-analytics.service';
 import { TripTruthService } from './trip-truth.service';
 import { LaneProfitabilityService } from './lane-profitability.service';
 import { ClientProfitabilityService } from './client-profitability.service';
+import { ProfitabilitySnapshotService } from './profitability-snapshot.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
@@ -14,7 +15,13 @@ import { NotificationsModule } from '../notifications/notifications.module';
     TripTruthService,
     LaneProfitabilityService,
     ClientProfitabilityService,
+    ProfitabilitySnapshotService,
   ],
-  exports: [CommercialAnalyticsService, LaneProfitabilityService, ClientProfitabilityService],
+  exports: [
+    CommercialAnalyticsService,
+    LaneProfitabilityService,
+    ClientProfitabilityService,
+    ProfitabilitySnapshotService,
+  ],
 })
 export class CommercialAnalyticsModule {}
