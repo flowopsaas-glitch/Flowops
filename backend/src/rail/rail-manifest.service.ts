@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, RailGauge, RailTrainManifestStatus, RailVehicleProfile, WagonType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
@@ -341,7 +341,18 @@ export class RailTrainManifestService {
     payload: Record<string, unknown>,
   ) {
     await this.prisma.withTenant(companyId, async (tx) => {
-      await tx.railTrainManifest.update({ where: { id: manifest.id }, data: { ...patch, status: to } });
+      // Compare-and-set on the status the caller read. Every manifest
+      // transition in the service funnels through here, so this is the one
+      // place the guarantee has to hold. A losing caller emits no event.
+      const { count } = await tx.railTrainManifest.updateMany({
+        where: { id: manifest.id, companyId, status: manifest.status },
+        data: { ...patch, status: to },
+      });
+      if (count === 0) {
+        throw new ConflictException(
+          `This manifest was already moved from ${manifest.status} by someone else.`,
+        );
+      }
       await this.outbox.enqueue(tx, companyId, event, {
         manifestId: manifest.id, manifestNumber: manifest.manifestNumber,
         from: manifest.status, to, ...payload,

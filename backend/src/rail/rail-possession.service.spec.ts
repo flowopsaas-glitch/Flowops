@@ -5,7 +5,7 @@
  * Detection is ADVISORY: it raises the alarm (audit + AiEvent + banner) and never blocks a consignment. A consignment that
  * cannot be checked is reported as such, never assumed clear.
  */
-import { BadRequestException, ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { FakeTable, snapshot } from '../../test/support/in-memory-db';
 import { RailPossessionService } from './rail-possession.service';
@@ -54,6 +54,61 @@ const body = (over: Record<string, any> = {}) => ({
 });
 
 afterEach(() => jest.restoreAllMocks());
+
+// ═══════════════════════════════════════════════════════════════════════════════
+/**
+ * A possession window is a safety boundary: the track is handed over for
+ * engineering work. Two operators cancelling and completing the same window
+ * must not both publish — the published event is what tells crews the track
+ * state changed.
+ */
+describe('a possession window only moves from the state it was read in', () => {
+  it('moves the window on a clean transition', async () => {
+    const { svc, windows, seedWindow } = make();
+    const w = seedWindow({ status: 'PLANNED' });
+
+    await svc.complete('A', w.id, MANAGER);
+
+    expect(windows.rows.find((r: any) => r.id === w.id)!.status).toBe('COMPLETED');
+  });
+
+  it('constrains the write on the expected status, not on the id alone', async () => {
+    const { svc, prisma, seedWindow } = make();
+    const w = seedWindow({ status: 'PLANNED' });
+
+    await svc.cancel('A', w.id, MANAGER);
+
+    const call = prisma.railPossessionWindow.updateMany.mock.calls[0][0];
+    expect(call.where).toMatchObject({ id: w.id, companyId: 'A', status: 'PLANNED' });
+  });
+
+  it('emits no event when another operator moved the window first', async () => {
+    const { svc, prisma, windows, seedWindow } = make();
+    const w = seedWindow({ status: 'PLANNED' });
+    const outbox = (svc as any).outbox;
+
+    // Another operator completed the window after our guard passed.
+    const original = prisma.withTenant;
+    jest.spyOn(prisma, 'withTenant').mockImplementation(async (c: string, fn: any) => {
+      windows.rows.find((r: any) => r.id === w.id)!.status = 'COMPLETED';
+      return original(c, fn);
+    });
+
+    await expect(svc.cancel('A', w.id, MANAGER)).rejects.toThrow(ConflictException);
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('emits exactly one event on a clean transition', async () => {
+    const { svc, seedWindow } = make();
+    const w = seedWindow({ status: 'PLANNED' });
+    const outbox = (svc as any).outbox;
+
+    await svc.cancel('A', w.id, MANAGER);
+
+    expect(outbox.enqueue).toHaveBeenCalledTimes(1);
+    expect(outbox.enqueue.mock.calls[0][2]).toBe('rail.possession.status_changed');
+  });
+});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 describe('entitlement', () => {

@@ -1,5 +1,5 @@
 import {
-  BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException,
+  BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Prisma, RailCapacityUnit, RailSlotApplicationStatus } from '@prisma/client';
@@ -466,7 +466,21 @@ export class RailSlotService {
     // subscriber can never observe an event for a change that rolled back (or
     // miss one because the process died after commit).
     const updated = await this.prisma.withTenant(companyId, async (tx) => {
-      const u = await tx.railSlotApplication.update({ where: { id }, data: { ...patch, status: to } });
+      // Compare-and-set on the status the guard above was checked against.
+      // The read that passed the guard happened before this transaction
+      // opened, so two operators acting on the same application both passed
+      // it, both wrote, and both published — subscribers saw one transition
+      // announced twice. A losing caller now writes nothing and emits nothing.
+      const { count } = await tx.railSlotApplication.updateMany({
+        where: { id, companyId, status: app.status },
+        data: { ...patch, status: to },
+      });
+      if (count === 0) {
+        throw new ConflictException(
+          `This application was already moved from ${app.status} by someone else.`,
+        );
+      }
+      const u = await tx.railSlotApplication.findFirstOrThrow({ where: { id, companyId } });
       if (event) {
         await this.outbox.enqueue(tx, companyId, event, {
           applicationId: id, applicationNumber: app.applicationNumber,

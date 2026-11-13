@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import { Prisma, RailAlertStatus, RailTelemetryAlertKind } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -348,7 +348,20 @@ export class RailTelemetryService {
       throw new BadRequestException(`A ${alert.status} alert cannot become ${to}.`);
     }
     const updated = await this.prisma.withTenant(companyId, async (tx) => {
-      const u = await tx.railTelemetryAlert.update({ where: { id }, data: { status: to, ...patch } });
+      // Compare-and-set on the status the guard above was checked against.
+      // Two controllers acknowledging the same alert used to both write and
+      // both publish, so the same alert went out twice with different
+      // `resolvedAt` timestamps on it.
+      const { count } = await tx.railTelemetryAlert.updateMany({
+        where: { id, companyId, status: alert.status },
+        data: { status: to, ...patch },
+      });
+      if (count === 0) {
+        throw new ConflictException(
+          `This alert was already moved from ${alert.status} by someone else.`,
+        );
+      }
+      const u = await tx.railTelemetryAlert.findFirstOrThrow({ where: { id, companyId } });
       await this.outbox.enqueue(tx, companyId, 'rail.telemetry.alert_updated', {
         alertId: id, kind: alert.kind, from: alert.status, to, note: note ?? null,
       });

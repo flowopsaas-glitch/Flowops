@@ -2,7 +2,7 @@
  * Slot applications, Annexure 25 self-screening, operator compliance, the corridor-envelope check and
  * the 60-day mobilisation sweeps — Wave 2. Prisma is an in-memory fake (backend/test/support).
  */
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { FakeTable, snapshot } from '../../test/support/in-memory-db';
 import { RailSlotService } from './rail-slot.service';
@@ -437,6 +437,66 @@ describe('submit — three hard gates', () => {
     expect(h.audit.record).not.toHaveBeenCalled();
     const ok = h.draftReady();
     expect((await h.svc.readiness('A', ok.id, NOW) as any).ready).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+/**
+ * Every slot transition funnels through one private `transition` helper, so
+ * that helper is the single place the guarantee has to hold. A slot
+ * application is a request for train path capacity on a shared network; a
+ * transition published twice tells subscribers the capacity changed twice.
+ */
+describe('a slot application only moves from the state it was read in', () => {
+  it('constrains the write on the expected status, not on the id alone', async () => {
+    const h: H = make();
+    const app = h.seedApp({ status: 'SUBMITTED' });
+
+    await h.svc.startAssessment('A', app.id, MANAGER);
+
+    const call = h.apps.updateMany.mock.calls[0][0];
+    expect(call.where).toMatchObject({ id: app.id, companyId: 'A', status: 'SUBMITTED' });
+  });
+
+  it('emits no event when another operator moved it first', async () => {
+    const h: H = make();
+    const app = h.seedApp({ status: 'SUBMITTED' });
+    const outbox = (h.svc as any).outbox;
+
+    // Another operator started the assessment after our guard passed.
+    const original = h.prisma.withTenant;
+    jest.spyOn(h.prisma, 'withTenant').mockImplementation(async (c: string, fn: any) => {
+      h.apps.rows.find((r: any) => r.id === app.id)!.status = 'UNDER_ASSESSMENT';
+      return original(c, fn);
+    });
+
+    await expect(h.svc.startAssessment('A', app.id, MANAGER)).rejects.toThrow(ConflictException);
+
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+    // Nothing was audited either — the transition did not happen.
+    expect(h.actions()).toEqual([]);
+  });
+
+  it('emits exactly one event on a clean transition', async () => {
+    const h: H = make();
+    const app = h.seedApp({ status: 'UNDER_ASSESSMENT' });
+    const outbox = (h.svc as any).outbox;
+
+    await h.svc.flagCapacityConflict('A', app.id, { note: 'Clashes with TOC-7 path' }, MANAGER);
+
+    expect(outbox.enqueue).toHaveBeenCalledTimes(1);
+    expect(outbox.enqueue.mock.calls[0][2]).toBe('rail.slot.capacity_conflict');
+  });
+
+  it('runs the transition inside a tenant context', async () => {
+    const h: H = make();
+    const app = h.seedApp({ status: 'SUBMITTED' });
+    const spy = jest.spyOn(h.prisma, 'withTenant');
+
+    await h.svc.startAssessment('A', app.id, MANAGER);
+
+    expect(spy).toHaveBeenCalledWith('A', expect.any(Function));
+    spy.mockRestore();
   });
 });
 
