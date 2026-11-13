@@ -20,7 +20,7 @@
  * the things the in-memory unit-test double cannot prove.
  */
 
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveIntegrationDatabaseUrl } from './env';
@@ -37,10 +37,69 @@ export const GENERATED_CLIENT_DIR = path.join(
 );
 
 export interface IntegrationDatabase {
-  prisma: PrismaClient;
+  prisma: TenantAwarePrismaClient;
   /** Which engine transport this client is using — asserted by the suite. */
   engine: 'native' | 'wasm';
   shutdown: () => Promise<void>;
+}
+
+/**
+ * A `PrismaClient` that also carries `withTenant`.
+ *
+ * Services are written against `PrismaService` — that is what Nest injects at
+ * runtime — but this suite constructs them by hand and passes a bare
+ * `PrismaClient` cast to `PrismaService`. The cast is only sound if the client
+ * also has the one method `PrismaService` adds that services actually call:
+ * `withTenant`.
+ *
+ * Without it, a service that establishes tenant context works in production
+ * and dies here with `withTenant is not a function`. That failure mode is
+ * worse than an inconvenience: it exerts quiet pressure to leave services
+ * unwrapped so they stay testable — the harness arguing against the very
+ * isolation it is meant to verify. So the double supplies the method, and
+ * `withTenantContext` below implements it the same way the real service does.
+ */
+export type TenantAwarePrismaClient = PrismaClient & {
+  withTenant<T>(
+    companyId: string,
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+    options?: { maxWait?: number; timeout?: number },
+  ): Promise<T>;
+};
+
+/**
+ * Mirror of `PrismaService.withTenant`, including the empty-tenant guard.
+ *
+ * Deliberately a faithful copy rather than a stub that just delegates to
+ * `$transaction`: the point of this suite is that the database decides. The
+ * guard is copied too, because a service that passes an empty tenant must
+ * fail here exactly as it fails in production.
+ */
+export function withTenantContext<TClient extends PrismaClient>(
+  prisma: TClient,
+): TClient & TenantAwarePrismaClient {
+  const client = prisma as TClient & TenantAwarePrismaClient;
+  if (typeof client.withTenant === 'function') return client;
+
+  client.withTenant = async function withTenant<T>(
+    companyId: string,
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+    options?: { maxWait?: number; timeout?: number },
+  ): Promise<T> {
+    if (typeof companyId !== 'string' || companyId.trim() === '') {
+      throw new Error(
+        `withTenant requires a non-empty companyId, received ${JSON.stringify(companyId)}. ` +
+          'An empty tenant id leaves app.company_id unset, which makes the RLS policy ' +
+          "step aside — every tenant's rows become visible.",
+      );
+    }
+    return prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.company_id', ${companyId}, true)`;
+      return fn(tx as Prisma.TransactionClient);
+    }, options);
+  };
+
+  return client;
 }
 
 export function nativeEngineFile(): string | undefined {
@@ -54,7 +113,7 @@ export async function createIntegrationDatabase(): Promise<IntegrationDatabase> 
   const url = resolveIntegrationDatabaseUrl();
 
   if (nativeEngineFile()) {
-    const prisma = new PrismaClient({ datasources: { db: { url } } });
+    const prisma = withTenantContext(new PrismaClient({ datasources: { db: { url } } }));
     return {
       prisma,
       engine: 'native',
@@ -70,7 +129,9 @@ export async function createIntegrationDatabase(): Promise<IntegrationDatabase> 
   const PrismaClientWasm = wasmClient.PrismaClient;
 
   const pool = new pg.Pool({ connectionString: url, max: 10 });
-  const prisma = new PrismaClientWasm({ adapter: new PrismaPg(pool) }) as PrismaClient;
+  const prisma = withTenantContext(
+    new PrismaClientWasm({ adapter: new PrismaPg(pool) }) as PrismaClient,
+  );
 
   return {
     prisma,
