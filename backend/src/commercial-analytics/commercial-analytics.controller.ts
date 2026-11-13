@@ -2,6 +2,7 @@ import { Controller, Get, Patch, Post, Body, Param, Query } from '@nestjs/common
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { CommercialAnalyticsService } from './commercial-analytics.service';
 import { TripTruthService } from './trip-truth.service';
+import { ProfitabilitySnapshotService } from './profitability-snapshot.service';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { RequireFeature } from '../billing/require-feature.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -22,6 +23,7 @@ export class CommercialAnalyticsController {
   constructor(
     private readonly svc: CommercialAnalyticsService,
     private readonly tripTruth: TripTruthService,
+    private readonly snapshots: ProfitabilitySnapshotService,
   ) {}
 
   /** GET /commercial-analytics/config — cost model configuration */
@@ -148,5 +150,49 @@ export class CommercialAnalyticsController {
   @Get('report')
   getFullReport(@CurrentUser() u: any, @Query('period') period?: string) {
     return this.svc.getFullReport(u.companyId, period);
+  }
+
+  // ── Profitability snapshots ─────────────────────────────────────────────
+  //
+  // The live endpoints answer "what did this lane earn?". They cannot answer
+  // "is it getting better?", because that needs the previous period and
+  // nothing was ever stored. These materialise the period into
+  // LaneProfitability / ClientProfitability so the deltas exist.
+
+  /** POST /commercial-analytics/snapshots/:period — materialise one period */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
+  @Post('snapshots/:period')
+  materialiseSnapshots(@CurrentUser() u: any, @Param('period') period: string) {
+    return this.snapshots.materialise(u.companyId, period);
+  }
+
+  /** POST /commercial-analytics/snapshots — materialise the current period */
+  @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN, UserRole.MANAGER)
+  @Post('snapshots')
+  materialiseCurrentSnapshots(@CurrentUser() u: any) {
+    return this.snapshots.materialise(u.companyId);
+  }
+
+  /** GET /commercial-analytics/snapshots/periods — which periods have history */
+  @Get('snapshots/periods')
+  listSnapshotPeriods(@CurrentUser() u: any) {
+    return this.snapshots.availablePeriods(u.companyId);
+  }
+
+  /** GET /commercial-analytics/snapshots/lanes — persisted lanes, worst margin first */
+  @Get('snapshots/lanes')
+  listLaneSnapshots(
+    @CurrentUser() u: any,
+    @Query('period') period?: string,
+    @Query('fromZone') fromZone?: string,
+    @Query('toZone') toZone?: string,
+  ) {
+    return this.snapshots.laneSnapshots(u.companyId, period, fromZone, toZone);
+  }
+
+  /** GET /commercial-analytics/snapshots/clients — persisted clients by profit rank */
+  @Get('snapshots/clients')
+  listClientSnapshots(@CurrentUser() u: any, @Query('period') period?: string) {
+    return this.snapshots.clientSnapshots(u.companyId, period);
   }
 }
