@@ -455,4 +455,420 @@ describe('ProcessControlService', () => {
       );
     });
   });
+
+  // Regression cover for the finding that completeStep read mutable instance
+  // state outside the transaction it wrote in, and then wrote it back
+  // unconditionally: two operators completing the same step both advanced the
+  // process, and a block landing in between was overwritten with a stale value.
+  describe('completeStep — a step may only advance the process once', () => {
+    const clerk: ActorContext = {
+      userId: 'user-clerk',
+      name: 'Dock Clerk',
+      role: 'WAREHOUSE',
+      permissions: null,
+    };
+
+    async function started(key: string) {
+      await approvedDefinition();
+      return (await service.startInstance(COMPANY_A, clerk, {
+        definitionCode: 'WMS.GOODS_RECEIPT',
+        businessKey: key,
+      }))!;
+    }
+
+    const whereOf = (call: any) => call[0].where;
+
+    // The goods-receipt flow gates each step on evidence, so every call in
+    // these tests carries the payload its current step demands.
+    const EVIDENCE: Record<string, any> = {
+      VERIFY_SKU: { lines: ['SKU-1'] },
+      INSPECT_QUANTITY: { countedQty: 100 },
+      PUT_AWAY: { putAwayBinId: 'BIN-1' },
+    };
+
+    async function completeCurrentStep(instanceId: string, outcome: any = 'SUCCESS') {
+      const instance = prisma
+        .all('processInstance')
+        .find((i: any) => i.id === instanceId) as any;
+      const step = prisma
+        .all('processStepDefinition')
+        .find((d: any) => d.id === instance?.currentStepId) as any;
+      return service.completeStep(COMPANY_A, clerk, instanceId, outcome, {
+        evidence: EVIDENCE[step?.code] ?? {},
+        result: {},
+      });
+    }
+
+    it('runs the step transition inside a tenant context', async () => {
+      const instance = await started('CAS-1');
+      const spy = jest.spyOn(prisma, 'withTenant');
+      await completeCurrentStep(instance.id);
+      expect(spy).toHaveBeenCalledWith(COMPANY_A, expect.any(Function));
+      spy.mockRestore();
+    });
+
+    it('scopes the step-instance transition to the calling company', async () => {
+      const instance = await started('CAS-2');
+      const spy = jest.spyOn(prisma.processStepInstance, 'updateMany');
+      await completeCurrentStep(instance.id);
+
+      expect(spy).toHaveBeenCalled();
+      expect(whereOf(spy.mock.calls[0])).toMatchObject({ companyId: COMPANY_A });
+      spy.mockRestore();
+    });
+
+    it('constrains the transition on the state it expects, not on the id alone', async () => {
+      const instance = await started('CAS-3');
+      const spy = jest.spyOn(prisma.processStepInstance, 'updateMany');
+      await completeCurrentStep(instance.id);
+
+      // The expected current status is part of the WHERE, so a second operator
+      // completing the same step cannot also match.
+      expect(whereOf(spy.mock.calls[0]).status).toEqual(
+        expect.objectContaining({ in: expect.arrayContaining(['PENDING', 'IN_PROGRESS']) }),
+      );
+      spy.mockRestore();
+    });
+
+    it('refuses when another operator completed the step first', async () => {
+      const instance = await started('CAS-4');
+      // The row was open when the transaction read it and is not any more: a
+      // serialised earlier caller moved it. This call must not advance the
+      // process as though it were the one that had.
+      const spy = jest
+        .spyOn(prisma.processStepInstance, 'updateMany')
+        .mockResolvedValueOnce({ count: 0 });
+
+      await expect(completeCurrentStep(instance.id)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+
+      spy.mockRestore();
+    });
+
+    it('does not advance the process when the step transition loses the race', async () => {
+      const instance = await started('CAS-5');
+      const spy = jest
+        .spyOn(prisma.processStepInstance, 'updateMany')
+        .mockResolvedValueOnce({ count: 0 });
+
+      await expect(completeCurrentStep(instance.id)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+
+      // The losing caller must leave no trace: no new step created, and the
+      // instance still pointing at the step it was on.
+      const steps = prisma
+        .all('processStepInstance')
+        .filter((s: any) => s.instanceId === instance.id);
+      expect(steps.filter((s: any) => s.status === 'IN_PROGRESS')).toHaveLength(1);
+      spy.mockRestore();
+    });
+
+    it('reads the step instance inside the transaction, not before it', async () => {
+      const instance = await started('CAS-6');
+      const order: string[] = [];
+
+      jest.spyOn(prisma, 'withTenant').mockImplementation(async (_c: string, fn: any) => {
+        order.push('open-transaction');
+        const result = await fn(prisma);
+        order.push('close-transaction');
+        return result;
+      });
+      const findSpy = jest
+        .spyOn(prisma.processStepInstance, 'findFirst')
+        .mockImplementation(async (..._args: any[]) => {
+          order.push('read-step-instance');
+          return null;
+        });
+
+      await completeCurrentStep(instance.id);
+
+      expect(order[0]).toBe('open-transaction');
+      expect(order).toContain('read-step-instance');
+      expect(order.indexOf('read-step-instance')).toBeGreaterThan(
+        order.indexOf('open-transaction'),
+      );
+      expect(order.indexOf('read-step-instance')).toBeLessThan(
+        order.lastIndexOf('close-transaction'),
+      );
+
+      findSpy.mockRestore();
+      jest.restoreAllMocks();
+    });
+
+    it('never writes an instance status it read before the transaction', async () => {
+      const instance = await started('CAS-7');
+      const spy = jest.spyOn(prisma.processInstance, 'updateMany');
+      await completeCurrentStep(instance.id);
+
+      // Guard against the assertion passing only because nothing was written.
+      expect(spy.mock.calls.length).toBeGreaterThan(0);
+      for (const call of spy.mock.calls) {
+        expect(whereOf(call)).toMatchObject({ id: instance.id, companyId: COMPANY_A });
+      }
+      spy.mockRestore();
+    });
+
+    it('advances to the next step exactly once on a clean run', async () => {
+      const instance = await started('CAS-8');
+      await completeCurrentStep(instance.id);
+
+      const steps = prisma
+        .all('processStepInstance')
+        .filter((s: any) => s.instanceId === instance.id);
+      const inProgress = steps.filter((s: any) => s.status === 'IN_PROGRESS');
+      expect(inProgress).toHaveLength(1);
+      expect(inProgress[0].code).toBe('INSPECT_QUANTITY');
+    });
+
+    it('clears the current step when the last step completes', async () => {
+      const instance = await started('CAS-9');
+      const spy = jest.spyOn(prisma.processInstance, 'updateMany');
+
+      // Walk all three steps of the goods-receipt flow.
+      for (let i = 0; i < 3; i += 1) {
+        await completeCurrentStep(instance.id);
+      }
+
+      const finalWrite = spy.mock.calls[spy.mock.calls.length - 1];
+      expect(whereOf(finalWrite)).toMatchObject({ companyId: COMPANY_A });
+      expect(((finalWrite[0] as any).data as any).currentStepId).toBeNull();
+      spy.mockRestore();
+
+      expect(
+        prisma.all('processInstance').find((i: any) => i.id === instance.id)?.status,
+      ).toBe('IN_PROGRESS');
+    });
+  });
+
+  describe('incidents and outcomes — state is only written where it is still true', () => {
+    const clerk: ActorContext = {
+      userId: 'user-clerk',
+      name: 'Dock Clerk',
+      role: 'WAREHOUSE',
+      permissions: null,
+    };
+
+    async function runningInstance(businessKey: string) {
+      await approvedDefinition();
+      return (await service.startInstance(COMPANY_A, clerk, {
+        definitionCode: 'WMS.GOODS_RECEIPT',
+        businessKey,
+      }))!;
+    }
+
+    const statusOf = (instanceId: string) =>
+      prisma.all('processInstance').find((i: any) => i.id === instanceId)?.status;
+
+    const EVIDENCE: Record<string, any> = {
+      VERIFY_SKU: { lines: ['SKU-1'] },
+      INSPECT_QUANTITY: { countedQty: 100 },
+      PUT_AWAY: { putAwayBinId: 'BIN-1' },
+    };
+
+    // Walk the whole goods-receipt flow so an outcome may be recorded.
+    async function finishAllSteps(instanceId: string) {
+      for (let i = 0; i < 3; i += 1) {
+        const live = prisma.all('processInstance').find((x: any) => x.id === instanceId) as any;
+        if (!live?.currentStepId) break;
+        const def = prisma
+          .all('processStepDefinition')
+          .find((d: any) => d.id === live.currentStepId) as any;
+        await service.completeStep(COMPANY_A, clerk, instanceId, 'SUCCESS', {
+          evidence: EVIDENCE[def.code] ?? {},
+          result: {},
+        });
+      }
+    }
+
+    it('does not block an instance that moved on while the incident was raised', async () => {
+      const instance = await runningInstance('IR-1');
+      const spy = jest
+        .spyOn(prisma.processInstance, 'updateMany')
+        .mockResolvedValueOnce({ count: 0 });
+
+      await expect(
+        service.raiseIncident(COMPANY_A, clerk, instance.id, {
+          code: 'DAMAGED_GOODS',
+          name: 'Damaged units',
+          severity: 'BLOCKING',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      spy.mockRestore();
+    });
+
+    it('blocks on the status it checked, not on the id alone', async () => {
+      const instance = await runningInstance('IR-2');
+      const spy = jest.spyOn(prisma.processInstance, 'updateMany');
+
+      await service.raiseIncident(COMPANY_A, clerk, instance.id, {
+        code: 'DAMAGED_GOODS',
+        name: 'Damaged units',
+        severity: 'BLOCKING',
+      });
+
+      const call = spy.mock.calls[spy.mock.calls.length - 1];
+      expect((call[0] as any).where).toMatchObject({
+        id: instance.id,
+        companyId: COMPANY_A,
+        status: 'IN_PROGRESS',
+      });
+      spy.mockRestore();
+    });
+
+    it('refuses a second resolution of the same incident', async () => {
+      const instance = await runningInstance('IR-3');
+      const incident = await service.raiseIncident(COMPANY_A, clerk, instance.id, {
+        code: 'PUT_AWAY_MISSING',
+        name: 'Not put away',
+        severity: 'BLOCKING',
+      });
+      await service.resolveIncident(COMPANY_A, manager, incident.id, {
+        resolution: 'Put away completed and bin scanned',
+      });
+
+      // Re-resolving an already-RESOLVED incident is deliberately idempotent —
+      // it returns the existing record without writing over it.
+      await service.resolveIncident(COMPANY_A, manager, incident.id, {
+        resolution: 'A different resolution written by someone else',
+      });
+      const row = prisma.all('processIncident').find((i: any) => i.id === incident.id) as any;
+      expect(row.resolution).toBe('Put away completed and bin scanned');
+    });
+
+    it('refuses when another operator moved the incident first', async () => {
+      const instance = await runningInstance('IR-3b');
+      const incident = await service.raiseIncident(COMPANY_A, clerk, instance.id, {
+        code: 'PUT_AWAY_MISSING',
+        name: 'Not put away',
+        severity: 'BLOCKING',
+      });
+
+      // The incident was OPEN when this call read it and is not any more:
+      // someone escalated it. This call must not stamp a resolution over that.
+      const spy = jest
+        .spyOn(prisma.processIncident, 'updateMany')
+        .mockResolvedValueOnce({ count: 0 });
+
+      await expect(
+        service.resolveIncident(COMPANY_A, manager, incident.id, {
+          resolution: 'Put away completed and bin scanned',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      spy.mockRestore();
+
+      // No resolution may be recorded by a call that lost the race.
+      const row = prisma.all('processIncident').find((i: any) => i.id === incident.id) as any;
+      expect(row.resolution).toBeFalsy();
+    });
+
+    it('scopes the incident update to the calling company', async () => {
+      const instance = await runningInstance('IR-4');
+      const incident = await service.raiseIncident(COMPANY_A, clerk, instance.id, {
+        code: 'PUT_AWAY_MISSING',
+        name: 'Not put away',
+        severity: 'BLOCKING',
+      });
+      const spy = jest.spyOn(prisma.processIncident, 'updateMany');
+      await service.resolveIncident(COMPANY_A, manager, incident.id, {
+        resolution: 'Put away completed',
+      });
+      expect((spy.mock.calls[0][0] as any).where).toMatchObject({ companyId: COMPANY_A });
+      spy.mockRestore();
+    });
+
+    it('unblocks on another company having open incidents — the count is tenant-scoped', async () => {
+      const instance = await runningInstance('IR-5');
+
+      // A second tenant with its own instance and its own unresolved blocking
+      // incident. It shares nothing with the instance above.
+      await approvedDefinition(COMPANY_B);
+      const otherInstance = await service.startInstance(COMPANY_B, clerk, {
+        definitionCode: 'WMS.GOODS_RECEIPT',
+        businessKey: 'IR-5-B',
+      });
+      await service.raiseIncident(COMPANY_B, clerk, otherInstance!.id, {
+        code: 'UNKNOWN_SKU',
+        name: 'Unknown SKU — other tenant',
+        severity: 'BLOCKING',
+      });
+
+      const incident = await service.raiseIncident(COMPANY_A, clerk, instance.id, {
+        code: 'PUT_AWAY_MISSING',
+        name: 'Not put away',
+        severity: 'BLOCKING',
+      });
+      expect(statusOf(instance.id)).toBe('BLOCKED');
+
+      const spy = jest.spyOn(prisma.processIncident, 'count');
+      await service.resolveIncident(COMPANY_A, manager, incident.id, {
+        resolution: 'Put away completed and bin scanned',
+      });
+
+      const countCall = spy.mock.calls[spy.mock.calls.length - 1];
+      expect((countCall[0] as any).where).toMatchObject({ companyId: COMPANY_A });
+
+      // The other tenant's open incident must not hold this instance blocked.
+      expect(statusOf(instance.id)).toBe('IN_PROGRESS');
+      spy.mockRestore();
+    });
+
+    it('unblocks only an instance that is still BLOCKED', async () => {
+      const instance = await runningInstance('IR-6');
+      const incident = await service.raiseIncident(COMPANY_A, clerk, instance.id, {
+        code: 'PUT_AWAY_MISSING',
+        name: 'Not put away',
+        severity: 'BLOCKING',
+      });
+      const spy = jest.spyOn(prisma.processInstance, 'updateMany');
+      await service.resolveIncident(COMPANY_A, manager, incident.id, {
+        resolution: 'Put away completed and bin scanned',
+      });
+
+      const unblock = spy.mock.calls[spy.mock.calls.length - 1];
+      expect((unblock[0] as any).where).toMatchObject({
+        id: instance.id,
+        companyId: COMPANY_A,
+        status: 'BLOCKED',
+      });
+      spy.mockRestore();
+    });
+
+    it('records the outcome inside a tenant context', async () => {
+      const instance = await runningInstance('OR-1');
+      await finishAllSteps(instance.id);
+      const spy = jest.spyOn(prisma, 'withTenant');
+      await service.recordOutcome(COMPANY_A, manager, instance.id, { status: 'COMPLETED' });
+      expect(spy).toHaveBeenCalledWith(COMPANY_A, expect.any(Function));
+      spy.mockRestore();
+    });
+
+    it('does not close over a status change that happened after the gate was evaluated', async () => {
+      const instance = await runningInstance('OR-2');
+      await finishAllSteps(instance.id);
+      const spy = jest
+        .spyOn(prisma.processInstance, 'updateMany')
+        .mockResolvedValueOnce({ count: 0 });
+
+      await expect(
+        service.recordOutcome(COMPANY_A, manager, instance.id, { status: 'COMPLETED' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      // No outcome row may survive a write that did not happen.
+      expect(prisma.all('processOutcome').filter((o: any) => o.instanceId === instance.id)).toHaveLength(0);
+      spy.mockRestore();
+    });
+
+    it('scopes the duplicate-outcome lookup to the calling company', async () => {
+      const instance = await runningInstance('OR-3');
+      await finishAllSteps(instance.id);
+      const spy = jest.spyOn(prisma.processOutcome, 'findFirst');
+      await service.recordOutcome(COMPANY_A, manager, instance.id, { status: 'COMPLETED' });
+      expect((spy.mock.calls[0][0] as any).where).toMatchObject({ companyId: COMPANY_A });
+      spy.mockRestore();
+    });
+  });
 });

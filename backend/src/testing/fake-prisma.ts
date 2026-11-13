@@ -138,12 +138,25 @@ export class FakePrisma {
    * lint rule forbids) because the table closures below are object methods, not
    * arrow functions, so they cannot see the class instance through `this`.
    */
+  /**
+   * Memoised per model name.
+   *
+   * Prisma hands back a stable delegate — `prisma.processInstance` is the same
+   * object every time — so a test can spy on it. Returning a fresh object per
+   * property access made `jest.spyOn(prisma.processInstance, 'updateMany')`
+   * spy on an object the service never touched.
+   */
+  private modelCache = new Map<string, any>();
+
   private modelFor(name: string, self: FakePrisma) {
+    const cached = this.modelCache.get(name);
+    if (cached) return cached;
+
     const table = self.tables[name] ?? (self.tables[name] = []);
 
     const matches = (row: Row, where: any): boolean => matchesWhere(row, where);
 
-    return {
+    const model = {
       async create(args: { data: Row; include?: any }) {
         const data = { ...(MODEL_DEFAULTS[name] ?? {}), ...resolveCreateData(args.data) };
         const row: Row = { id: data.id ?? self.nextId(), createdAt: new Date(), ...data };
@@ -236,6 +249,9 @@ export class FakePrisma {
         return row;
       },
     };
+
+    this.modelCache.set(name, model);
+    return model;
   }
 
   get processDefinition() {
@@ -311,6 +327,18 @@ export class FakePrisma {
       () => undefined,
     );
     return run;
+  }
+
+  /**
+   * Mirrors `PrismaService.withTenant`: the same serialisation as
+   * `$transaction`, plus the empty-tenant guard the real service applies —
+   * a test double that skips it would let an unscoped write pass unnoticed.
+   */
+  async withTenant<T>(companyId: string, fn: (tx: FakePrisma) => Promise<T>): Promise<T> {
+    if (typeof companyId !== 'string' || companyId.trim() === '') {
+      throw new Error('withTenant requires a non-empty companyId');
+    }
+    return this.$transaction(fn) as Promise<T>;
   }
 
   async $executeRaw(strings: TemplateStringsArray | any, ...values: any[]) {
