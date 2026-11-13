@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { CreateShipmentFileDto } from './dto/create-shipment-file.dto';
@@ -100,17 +100,28 @@ export class ShipmentFileService {
     const data: any = { ...dto };
     if (dto.etd !== undefined) data.etd = dto.etd ? new Date(dto.etd) : null;
     if (dto.eta !== undefined) data.eta = dto.eta ? new Date(dto.eta) : null;
-    return this.prisma.shipmentFile.update({ where: { id }, data });
+    const { count } = await this.prisma.shipmentFile.updateMany({ where: { id, companyId }, data });
+    if (count === 0) throw new NotFoundException('Shipment file not found');
+    return this.get(companyId, id);
   }
 
   /** Soft cancel — never hard-delete a shipment file. */
   async cancel(companyId: string, id: string) {
     await this.assertEntitled(companyId);
-    await this.get(companyId, id);
-    return this.prisma.shipmentFile.update({
-      where: { id },
+    const file = await this.get(companyId, id);
+    if (file.status === 'CANCELLED') return file;
+
+    // A cancelled file is terminal. The status is part of the WHERE so a
+    // milestone racing this call cannot land afterwards and quietly un-cancel
+    // the file — the old plain update on the id alone always won.
+    const { count } = await this.prisma.shipmentFile.updateMany({
+      where: { id, companyId, status: { not: 'CANCELLED' } as any },
       data: { status: 'CANCELLED' },
     });
+    if (count === 0) {
+      throw new ConflictException('The shipment file changed while it was being cancelled.');
+    }
+    return this.get(companyId, id);
   }
 
   // ── Milestones ─────────────────────────────────────────────────────────────
@@ -119,13 +130,41 @@ export class ShipmentFileService {
   async advanceMilestone(companyId: string, id: string, status: string, note?: string) {
     await this.assertEntitled(companyId);
     const file = await this.get(companyId, id);
+    if (file.status === 'CANCELLED') {
+      throw new ConflictException('This shipment file is cancelled and cannot be advanced.');
+    }
 
-    await this.prisma.shipmentMilestone.create({
-      data: { fileId: id, status: status as any, note: note ?? null },
-    });
-    const updated = await this.prisma.shipmentFile.update({
-      where: { id },
-      data: { status: status as any },
+    // The milestone and the status move together. They used to be two
+    // independent writes, so a failure between them left the timeline saying
+    // something the file did not — and for a shipment the milestone log *is*
+    // the record of where the cargo is.
+    const updated = await this.prisma.withTenant(companyId, async (tx) => {
+      // Compare-and-set FIRST, then write the milestone.
+      //
+      // Compare-and-set on the status we read, and never off CANCELLED: two
+      // operators scanning at two gates used to both write, and the file kept
+      // whichever landed last while both milestones sat in the timeline.
+      //
+      // The order matters. Writing the milestone first meant a caller who lost
+      // the race still left a row behind — the timeline claimed the cargo moved
+      // when the file said it did not. Only a transaction rollback removed it,
+      // and relying on that makes the guarantee depend on how the caller's
+      // client behaves rather than on the code.
+      const { count } = await tx.shipmentFile.updateMany({
+        where: { id, companyId, status: file.status as any },
+        data: { status: status as any },
+      });
+      if (count === 0) {
+        throw new ConflictException(
+          'The shipment file was already advanced by someone else — no milestone was recorded.',
+        );
+      }
+
+      await tx.shipmentMilestone.create({
+        data: { fileId: id, status: status as any, note: note ?? null },
+      });
+
+      return tx.shipmentFile.findFirstOrThrow({ where: { id, companyId } });
     });
 
     // Tracked event (surfaces in AI Control Tower; best-effort).
