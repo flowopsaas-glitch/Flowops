@@ -160,7 +160,11 @@ test('the real tree: tenant tables come from the schema, and the scan is sane', 
   // here means detection broke.
   // 138 -> 140 on 2026-11-14: the field-records migration added two tenant
   // models (SafetyIncident, TripDocument).
-  assert.equal(r.summary.tenantTables, 140);
+  // 140 -> 141 on 2026-11-15: booking_requests gained a companyId column
+  // (migration 20261115090000) and so became a tenant model. It had shipped
+  // carrying only linkId, which is why the 20261012210000 RLS sweep could not
+  // cover it and why any lookup by id would have resolved for every company.
+  assert.equal(r.summary.tenantTables, 141);
   assert.ok(r.summary.operations > 1000, `expected a large tree, got ${r.summary.operations}`);
   assert.equal(
     r.summary.contextualised + r.summary.bare + r.summary.exempt,
