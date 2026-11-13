@@ -1,0 +1,194 @@
+
+> flowops-backend@1.0.0 test:integration
+> jest --config ./test/jest-integration.json --runInBand --json --outputFile integration-report.json
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/runner/work/Flowops/Flowops/backend/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/integration/truck-window-change.integration.spec.ts (12.427 s)
+  ● Console
+
+    console.log
+      [integration] truck window changes engine: native
+
+      at Object.<anonymous> (test/integration/truck-window-change.integration.spec.ts:80:13)
+
+FAIL test/integration/process-control.integration.spec.ts (10.829 s)
+  ● Console
+
+    console.log
+      [integration] process-control engine: native
+
+      at Object.<anonymous> (test/integration/process-control.integration.spec.ts:86:13)
+
+  ● Process Control (PostgreSQL) › instance execution under concurrency › advances only through the configured successor
+
+    TypeError: this.prisma.withTenant is not a function
+
+    [0m [90m 678 |[39m     }
+     [90m 679 |[39m
+    [31m[1m>[22m[39m[90m 680 |[39m     [36mawait[39m [36mthis[39m[33m.[39mprisma[33m.[39mwithTenant(companyId[33m,[39m [36masync[39m (tx) [33m=>[39m {
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 681 |[39m       [90m// Read the mutable state INSIDE the transaction. It used to be read[39m
+     [90m 682 |[39m       [90m// before it, so two operators completing the same step at once both saw[39m
+     [90m 683 |[39m       [90m// the same PENDING row and both advanced the process — the process then[39m[0m
+
+      at ProcessControlService.completeStep (src/process-control/process-control.service.ts:680:23)
+      at Object.<anonymous> (test/integration/process-control.integration.spec.ts:252:26)
+
+  ● Process Control (PostgreSQL) › instance execution under concurrency › refuses a step the actor’s role may not execute
+
+    TypeError: this.prisma.withTenant is not a function
+
+    [0m [90m 678 |[39m     }
+     [90m 679 |[39m
+    [31m[1m>[22m[39m[90m 680 |[39m     [36mawait[39m [36mthis[39m[33m.[39mprisma[33m.[39mwithTenant(companyId[33m,[39m [36masync[39m (tx) [33m=>[39m {
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 681 |[39m       [90m// Read the mutable state INSIDE the transaction. It used to be read[39m
+     [90m 682 |[39m       [90m// before it, so two operators completing the same step at once both saw[39m
+     [90m 683 |[39m       [90m// the same PENDING row and both advanced the process — the process then[39m[0m
+
+      at ProcessControlService.completeStep (src/process-control/process-control.service.ts:680:23)
+      at Object.<anonymous> (test/integration/process-control.integration.spec.ts:287:7)
+
+  ● Process Control (PostgreSQL) › outcomes and audit › records a first-time-right outcome for a clean run and closes the instance
+
+    TypeError: this.prisma.withTenant is not a function
+
+    [0m [90m 678 |[39m     }
+     [90m 679 |[39m
+    [31m[1m>[22m[39m[90m 680 |[39m     [36mawait[39m [36mthis[39m[33m.[39mprisma[33m.[39mwithTenant(companyId[33m,[39m [36masync[39m (tx) [33m=>[39m {
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 681 |[39m       [90m// Read the mutable state INSIDE the transaction. It used to be read[39m
+     [90m 682 |[39m       [90m// before it, so two operators completing the same step at once both saw[39m
+     [90m 683 |[39m       [90m// the same PENDING row and both advanced the process — the process then[39m[0m
+
+      at ProcessControlService.completeStep (src/process-control/process-control.service.ts:680:23)
+      at runToCompletion (test/integration/process-control.integration.spec.ts:392:7)
+      at Object.<anonymous> (test/integration/process-control.integration.spec.ts:415:24)
+
+  ● Process Control (PostgreSQL) › outcomes and audit › does not call a run with an incident first-time-right
+
+    TypeError: this.prisma.withTenant is not a function
+
+    [0m [90m 678 |[39m     }
+     [90m 679 |[39m
+    [31m[1m>[22m[39m[90m 680 |[39m     [36mawait[39m [36mthis[39m[33m.[39mprisma[33m.[39mwithTenant(companyId[33m,[39m [36masync[39m (tx) [33m=>[39m {
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 681 |[39m       [90m// Read the mutable state INSIDE the transaction. It used to be read[39m
+     [90m 682 |[39m       [90m// before it, so two operators completing the same step at once both saw[39m
+     [90m 683 |[39m       [90m// the same PENDING row and both advanced the process — the process then[39m[0m
+
+      at ProcessControlService.completeStep (src/process-control/process-control.service.ts:680:23)
+      at runToCompletion (test/integration/process-control.integration.spec.ts:392:7)
+      at Object.<anonymous> (test/integration/process-control.integration.spec.ts:443:24)
+
+  ● Process Control (PostgreSQL) › outcomes and audit › keeps an audit trail of every material transition
+
+    TypeError: this.prisma.withTenant is not a function
+
+    [0m [90m 678 |[39m     }
+     [90m 679 |[39m
+    [31m[1m>[22m[39m[90m 680 |[39m     [36mawait[39m [36mthis[39m[33m.[39mprisma[33m.[39mwithTenant(companyId[33m,[39m [36masync[39m (tx) [33m=>[39m {
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 681 |[39m       [90m// Read the mutable state INSIDE the transaction. It used to be read[39m
+     [90m 682 |[39m       [90m// before it, so two operators completing the same step at once both saw[39m
+     [90m 683 |[39m       [90m// the same PENDING row and both advanced the process — the process then[39m[0m
+
+      at ProcessControlService.completeStep (src/process-control/process-control.service.ts:680:23)
+      at runToCompletion (test/integration/process-control.integration.spec.ts:392:7)
+      at Object.<anonymous> (test/integration/process-control.integration.spec.ts:456:24)
+
+PASS test/integration/trip-leg.integration.spec.ts (10.453 s)
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:24 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mBridge could not complete step VERIFY_SKU on instance cmwf7awzb00n338l4pbpcakry: this.prisma.withTenant is not a function[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:24 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mGoods-receipt bridge failed for GR-2026-00001: Cannot record outcome: 4 step(s) still open[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:24 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mBridge could not complete step VERIFY_SKU on instance cmwf7axje00oh38l4ktw5105p: this.prisma.withTenant is not a function[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:24 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mGoods-receipt bridge failed for GR-2026-00001: Cannot record outcome: 4 step(s) still open[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:25 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mBridge could not complete step VERIFY_SKU on instance cmwf7ay2o00pv38l492lew1yb: this.prisma.withTenant is not a function[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:25 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mGoods-receipt bridge failed for GR-2026-00001: Cannot record outcome: 4 step(s) still open[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:26 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mBridge could not complete step VERIFY_SKU on instance cmwf7ayme00rd38l4m2cn792f: this.prisma.withTenant is not a function[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:26 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mGoods-receipt bridge failed for GR-2026-00001: Cannot record outcome: 4 step(s) still open[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:26 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mBridge could not complete step VERIFY_SKU on instance cmwf7az6000sv38l4q2loiusi: this.prisma.withTenant is not a function[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:26 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mGoods-receipt bridge failed for GR-2026-00001: Cannot record outcome: a blocking incident must be resolved first[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:27 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mBridge could not complete step VERIFY_SKU on instance cmwf7azpx00ud38l4i6isu1ry: this.prisma.withTenant is not a function[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:27 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mGoods-receipt bridge failed for GR-2026-00001: Cannot record outcome: a blocking incident must be resolved first[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:28 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mBridge could not complete step VERIFY_SKU on instance cmwf7b08v00vs38l4h7utcp8t: this.prisma.withTenant is not a function[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:28 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mGoods-receipt bridge failed for GR-2026-00001: Cannot record outcome: a blocking incident must be resolved first[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:29 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mBridge could not complete step VERIFY_SKU on instance cmwf7b0rr00xa38l44pio3xvu: this.prisma.withTenant is not a function[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:29 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mGoods-receipt bridge failed for GR-2026-00001: Cannot record outcome: 4 step(s) still open[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:29 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mBridge could not complete step VERIFY_SKU on instance cmwf7b0rr00xa38l44pio3xvu: this.prisma.withTenant is not a function[39m
+[33m[Nest] 5547  - [39m11/13/2026, 4:38:29 PM [33m   WARN[39m [38;5;3m[GoodsReceiptProcessBridge] [39m[33mGoods-receipt bridge failed for GR-2026-00001: Cannot record outcome: 4 step(s) still open[39m
+FAIL test/integration/goods-receipt.integration.spec.ts (6.814 s)
+  ● Console
+
+    console.log
+      [integration] goods receipt engine: native
+
+      at Object.<anonymous> (test/integration/goods-receipt.integration.spec.ts:61:13)
+
+  ● Goods receipt → Process Book (PostgreSQL) › a clean receipt › walks the standard to completion and records a first-time-right outcome
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "COMPLETED"
+    Received: "IN_PROGRESS"
+
+    [0m [90m 147 |[39m
+     [90m 148 |[39m       [36mconst[39m finished [33m=[39m [36mawait[39m instanceFor(receipt[33m.[39mid)[33m;[39m
+    [31m[1m>[22m[39m[90m 149 |[39m       expect(finished[33m![39m[33m.[39mstatus)[33m.[39mtoBe([32m'COMPLETED'[39m)[33m;[39m
+     [90m     |[39m                                [31m[1m^[22m[39m
+     [90m 150 |[39m       expect(finished[33m![39m[33m.[39mcurrentStepId)[33m.[39mtoBeNull()[33m;[39m
+     [90m 151 |[39m
+     [90m 152 |[39m       [36mconst[39m outcome [33m=[39m [36mawait[39m prisma[33m.[39mprocessOutcome[33m.[39mfindFirstOrThrow({[0m
+
+      at Object.<anonymous> (test/integration/goods-receipt.integration.spec.ts:149:32)
+
+  ● Goods receipt → Process Book (PostgreSQL) › exceptions › records a short shipment as an exception and does not call it right first time
+
+    expect(received).not.toBeNull()
+
+    Received: null
+
+    [0m [90m 205 |[39m         where[33m:[39m { instanceId[33m:[39m instance[33m![39m[33m.[39mid }[33m,[39m
+     [90m 206 |[39m       })[33m;[39m
+    [31m[1m>[22m[39m[90m 207 |[39m       expect(outcome)[33m.[39mnot[33m.[39mtoBeNull()[33m;[39m
+     [90m     |[39m                           [31m[1m^[22m[39m
+     [90m 208 |[39m       expect(outcome[33m![39m[33m.[39mfirstTimeRight)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 209 |[39m       expect(outcome[33m![39m[33m.[39mstatus)[33m.[39mtoBe([32m'COMPLETED_WITH_EXCEPTIONS'[39m)[33m;[39m
+     [90m 210 |[39m       expect(outcome[33m![39m[33m.[39mincidentCount)[33m.[39mtoBeGreaterThanOrEqual([35m1[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (test/integration/goods-receipt.integration.spec.ts:207:27)
+
+  ● Goods receipt → Process Book (PostgreSQL) › exceptions › records damaged stock as an exception
+
+    NotFoundError: No ProcessOutcome found
+
+    [0m [90m 225 |[39m       expect(incident[33m.[39mseverity)[33m.[39mtoBe([32m'MAJOR'[39m)[33m;[39m
+     [90m 226 |[39m
+    [31m[1m>[22m[39m[90m 227 |[39m       [36mconst[39m outcome [33m=[39m [36mawait[39m prisma[33m.[39mprocessOutcome[33m.[39mfindFirstOrThrow({
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 228 |[39m         where[33m:[39m { instanceId[33m:[39m instance[33m![39m[33m.[39mid }[33m,[39m
+     [90m 229 |[39m       })[33m;[39m
+     [90m 230 |[39m       expect(outcome[33m.[39mfirstTimeRight)[33m.[39mtoBe([36mfalse[39m)[33m;[39m[0m
+
+      at node_modules/@prisma/client/runtime/library.js:31:5146
+      at node_modules/@prisma/client/runtime/library.js:31:5086
+      at Object.<anonymous> (test/integration/goods-receipt.integration.spec.ts:227:23)
+
+PASS test/integration/product-master.integration.spec.ts (5.838 s)
+  ● Console
+
+    console.log
+      [integration] product-master engine: native
+
+      at Object.<anonymous> (test/integration/product-master.integration.spec.ts:44:13)
+
+PASS test/integration/support/env.spec.ts
+
+Test Suites: 2 failed, 4 passed, 6 total
+Tests:       8 failed, 69 passed, 77 total
+Snapshots:   0 total
+Time:        46.68 s
+Ran all test suites.
+Test results written to: integration-report.json
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
