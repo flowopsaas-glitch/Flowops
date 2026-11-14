@@ -608,49 +608,102 @@ export class WarehouseManagementService {
     };
   }
 
+  /**
+   * Approve a completed cycle count and post its stock adjustments.
+   *
+   * TWO DEFECTS FIXED HERE.
+   *
+   *   1. NOT ATOMIC, NOT IDEMPOTENT. The `status: 'COMPLETED'` check above this
+   *      block is a READ. Two concurrent approvals both satisfy it and both run
+   *      the whole loop, posting every adjustment and movement TWICE. The lines
+   *      were captured before the loop, so marking `adjustmentPosted` at the end
+   *      of each iteration did not stop a second caller — it had already read
+   *      them as unposted. The claim now happens at the write, inside a
+   *      transaction, and the adjustments are posted only by the caller that
+   *      wins the claim.
+   *
+   *   2. ABSOLUTE OVERWRITE MASQUERADING AS AN ADJUSTMENT. It set
+   *      `quantityOnHand: line.countedQty` — an absolute — while the movement
+   *      ledger recorded `quantity: line.variance`, a delta. Any stock movement
+   *      between the count and the approval (a sale, a receipt, a pick) was
+   *      silently ERASED, and the two records of the same event disagreed.
+   *      `variance` is `countedQty - systemQty`, so applying it as an increment
+   *      reaches the same figure when nothing moved, and preserves the
+   *      difference when something did — which is what "adjustment" means.
+   */
   async approveCycleCount(id: string, companyId: string, approvedBy: string) {
     const cc = await this.prisma.cycleCount.findFirst({
       where: { id, companyId, status: 'COMPLETED' }, include: { lines: true },
     });
     if (!cc) throw new NotFoundException('Cycle count not found or not completed');
 
-    // Post adjustments for all variances
-    for (const line of cc.lines) {
-      if (line.variance && line.variance !== 0 && line.countedQty !== null) {
-        const item = await this.prisma.inventoryItem.findFirst({
-          where: { companyId, sku: line.sku, bin: { code: line.binCode } },
+    return this.prisma.withTenant(companyId, async (tx) => {
+      // CLAIM FIRST. Only the winner posts anything.
+      const claimed = await tx.cycleCount.updateMany({
+        where: { id, companyId, status: 'COMPLETED' },
+        data: { status: 'APPROVED', approvedAt: new Date(), approvedBy },
+      });
+
+      if (claimed.count === 0) {
+        // Another caller got here between our read and this write, and their
+        // transaction already posted the adjustments. Posting them again would
+        // double every movement.
+        const current = await tx.cycleCount.findUnique({
+          where: { id },
+          select: { status: true, countNumber: true },
         });
-        if (item) {
-          await this.prisma.inventoryItem.update({
-            where: { id: item.id },
-            data: {
-              quantityOnHand: line.countedQty,
-              quantityAvailable: line.countedQty - item.quantityAllocated,
-              lastCountedAt: new Date(),
-            },
-          });
-          await this.recordMovement(companyId, {
-            type: 'CYCLE_COUNT', sku: line.sku, quantity: line.variance,
-            fromBinId: line.variance < 0 ? item.binId : undefined,
-            toBinId: line.variance > 0 ? item.binId : undefined,
-            cycleCountId: id, reason: `Cycle count adjustment: ${cc.countNumber}`,
-            performedBy: approvedBy,
-          });
+        if (current?.status === 'APPROVED') {
+          return {
+            countNumber: current.countNumber,
+            status: 'APPROVED',
+            adjustmentsPosted: 0,
+            alreadyApproved: true,
+          };
         }
-
-        await this.prisma.cycleCountLine.update({
-          where: { id: line.id },
-          data: { resolved: true, adjustmentPosted: true, resolvedBy: approvedBy, resolvedAt: new Date() },
-        });
+        throw new NotFoundException('Cycle count not found or not completed');
       }
-    }
 
-    await this.prisma.cycleCount.update({
-      where: { id },
-      data: { status: 'APPROVED', approvedAt: new Date(), approvedBy },
+      let adjustmentsPosted = 0;
+
+      for (const line of cc.lines) {
+        if (line.variance && line.variance !== 0 && line.countedQty !== null) {
+          const item = await tx.inventoryItem.findFirst({
+            where: { companyId, sku: line.sku, bin: { code: line.binCode } },
+          });
+          if (item) {
+            // DELTA, not an absolute. See note (2) above.
+            await tx.inventoryItem.update({
+              where: { id: item.id },
+              data: {
+                quantityOnHand: { increment: line.variance },
+                quantityAvailable: { increment: line.variance },
+                lastCountedAt: new Date(),
+              },
+            });
+            await this.recordMovement(companyId, {
+              type: 'CYCLE_COUNT', sku: line.sku, quantity: line.variance,
+              fromBinId: line.variance < 0 ? item.binId : undefined,
+              toBinId: line.variance > 0 ? item.binId : undefined,
+              cycleCountId: id, reason: `Cycle count adjustment: ${cc.countNumber}`,
+              performedBy: approvedBy,
+            }, tx);
+          }
+
+          await tx.cycleCountLine.update({
+            where: { id: line.id },
+            data: { resolved: true, adjustmentPosted: true, resolvedBy: approvedBy, resolvedAt: new Date() },
+          });
+          adjustmentsPosted += 1;
+        }
+      }
+
+      return {
+        countNumber: cc.countNumber,
+        status: 'APPROVED',
+        adjustmentsPosted,
+        alreadyApproved: false,
+      };
     });
-
-    return { countNumber: cc.countNumber, status: 'APPROVED', adjustmentsPosted: cc.totalVariances };
   }
 
 
@@ -807,13 +860,18 @@ Return ONLY valid JSON:
   // STOCK MOVEMENT RECORDING & HISTORY
   // ═══════════════════════════════════════════════════════════════════════
 
+  /**
+   * `db` lets a caller pass the transaction client so a movement and the stock
+   * change it describes commit together. Defaults to `this.prisma`, so every
+   * existing caller is unaffected.
+   */
   private async recordMovement(companyId: string, dto: {
     type: string; sku: string; quantity: number;
     fromBinId?: string; toBinId?: string;
     goodsReceiptId?: string; pickOrderId?: string; cycleCountId?: string;
     reason?: string; performedBy?: string;
-  }) {
-    await this.prisma.stockMovement.create({
+  }, db: any = this.prisma) {
+    await db.stockMovement.create({
       data: { ...withCompanyId(companyId, dto), performedAt: new Date() } as any,
     });
   }

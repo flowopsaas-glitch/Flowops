@@ -111,17 +111,17 @@ export class SafetyIncidentService {
    * this table exists to preserve.
    */
   async decide(companyId: string, id: string, verdict: 'VERIFIED' | 'REJECTED', reason: string | undefined, user: any) {
+    // COMPARE-AND-SET, not read-then-write.
+    //
+    // The previous version read the row, checked `status === 'VERIFIED' |
+    // 'REJECTED'`, then updated. Two decisions in flight both read an OPEN
+    // incident and both passed the check, so the second overwrote the first —
+    // taking `verifiedByUserId` and `verifiedAt` with it. The error message
+    // below promises that "the record of who made it survives"; as a read it
+    // could not keep that promise. Only one caller can win a conditional write.
     return this.prisma.withTenant(companyId, async (tx) => {
-      const row = await tx.safetyIncident.findFirst({ where: { id, companyId } });
-      if (!row) throw new NotFoundException('Incident not found');
-      if (row.status === 'VERIFIED' || row.status === 'REJECTED') {
-        throw new BadRequestException(
-          `Incident is already ${row.status}; a decision is final so the record of who made it survives`,
-        );
-      }
-
-      const updated = await tx.safetyIncident.update({
-        where: { id },
+      const claimed = await tx.safetyIncident.updateMany({
+        where: { id, companyId, status: { notIn: ['VERIFIED', 'REJECTED'] } },
         data:
           verdict === 'VERIFIED'
             ? { status: 'VERIFIED', verifiedByUserId: user?.id ?? null, verifiedAt: new Date() }
@@ -133,6 +133,21 @@ export class SafetyIncidentService {
               },
       });
 
+      if (claimed.count === 0) {
+        // Either the incident is not ours, or it was decided a moment ago.
+        // Re-read to tell those apart: one is a 404, the other is a 409, and
+        // collapsing them into one message would hide a real race as a typo.
+        const current = await tx.safetyIncident.findFirst({
+          where: { id, companyId },
+          select: { status: true },
+        });
+        if (!current) throw new NotFoundException('Incident not found');
+        throw new BadRequestException(
+          `Incident is already ${current.status}; a decision is final so the record of who made it survives`,
+        );
+      }
+
+      const updated = await tx.safetyIncident.findFirstOrThrow({ where: { id, companyId } });
       return this.present(updated, EMPTY_NAMES, EMPTY_NAMES);
     });
   }
