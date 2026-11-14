@@ -1,12 +1,19 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  AutoDispatchService,
+  DispatchMode,
+} from '../dispatch/auto-dispatch.service';
 import { CreateIntegrationDto, UpdateIntegrationDto, IngestOrderDto } from './dto/order-flow.dto';
 
 @Injectable()
 export class OrderFlowService {
   private readonly logger = new Logger(OrderFlowService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly autoDispatch: AutoDispatchService,
+  ) {}
 
   async createIntegration(companyId: string, dto: CreateIntegrationDto) {
     return this.prisma.orderFlowIntegration.create({
@@ -255,22 +262,59 @@ export class OrderFlowService {
     });
   }
 
-  private async autoDispatchWaybill(waybillId: string, companyId: string, _rules: any) {
+  /**
+   * Hand an ingested order to the real dispatcher.
+   *
+   * WHAT WAS HERE BEFORE, AND WHY IT WAS WORSE THAN NOTHING
+   *
+   * This method found an AVAILABLE driver, set the waybill to COLLECTED, and
+   * logged `Auto-dispatched waybill X to driver Y`. It never assigned anyone,
+   * and it could not have: the Waybill model has no driverId and there is no
+   * assignment join model. Driver assignment lives on shipment.driverId, which
+   * is what the real AutoDispatchService writes.
+   *
+   * So every order ingested with autoDispatch enabled was marked COLLECTED —
+   * a real chain-of-custody event meaning "driver acknowledges receipt" — with
+   * nobody collecting it, and a log line asserting a dispatch that never
+   * happened. A false success log is worse than no log: it is what the next
+   * engineer trusts when the customer asks where their parcel is.
+   *
+   * Two further defects fell out of the same shortcut: the driver was never
+   * marked ON_ROUTE, so the same driver was "selected" for every subsequent
+   * order; and `findFirst` with no ordering picked an arbitrary one, ignoring
+   * the compliance and load-balancing rules the real dispatcher applies.
+   *
+   * Now it delegates. The real service claims the waybill atomically, checks
+   * driver compliance, balances load, creates the shipment and writes a
+   * tracking event. The log reports what actually happened — including the
+   * reason when nothing was assigned — so it can be believed.
+   */
+  private async autoDispatchWaybill(waybillId: string, companyId: string, rules: any) {
     try {
-      // Find available driver
-      const driver = await this.prisma.driver.findFirst({
-        where: { companyId, status: 'AVAILABLE', isActive: true },
-      });
+      const mode: DispatchMode =
+        rules?.mode === 'PROXIMITY' || rules?.mode === 'BALANCED'
+          ? rules.mode
+          : 'INTELLIGENT';
 
-      if (driver) {
-        await this.prisma.waybill.update({
-          where: { id: waybillId },
-          data: { status: 'COLLECTED' },
-        });
-        this.logger.log(`Auto-dispatched waybill ${waybillId} to driver ${driver.id}`);
+      const result = await this.autoDispatch.dispatch(companyId, waybillId, { mode });
+
+      if (result.assigned && result.selectedDriver) {
+        this.logger.log(
+          `Auto-dispatched waybill ${waybillId} to driver ` +
+            `${result.selectedDriver.driverId} (${result.selectedDriver.driverName}) ` +
+            `via ${result.mode}.`,
+        );
+      } else {
+        // Say so. A waybill sitting unassigned is actionable; one that looks
+        // assigned is not.
+        this.logger.warn(
+          `Auto-dispatch could not assign waybill ${waybillId}: ${result.reason}`,
+        );
       }
-    } catch (error) {
-      this.logger.warn(`Auto-dispatch failed for waybill ${waybillId}: ${error.message}`);
+    } catch (error: any) {
+      this.logger.warn(
+        `Auto-dispatch failed for waybill ${waybillId}: ${error?.message ?? error}`,
+      );
     }
   }
 }

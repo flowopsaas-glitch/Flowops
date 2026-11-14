@@ -13,12 +13,44 @@ import { TripDocumentService } from './trip-document.service';
 const COMPANY = 'C-ACME';
 
 function harness() {
+  const incidents: Record<string, any> = {};
   const tx: any = {
     driver: { findFirst: jest.fn(), findMany: jest.fn() },
     user: { findMany: jest.fn() },
     trip: { findFirst: jest.fn(), findMany: jest.fn() },
-    safetyIncident: { create: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+    safetyIncident: {
+      create: jest.fn(), findMany: jest.fn(), update: jest.fn(),
+      // Default implementation reads the row store, so `decide` can tell "not
+      // yours" from "already decided" after a conditional write matches nothing.
+      // Tests that need a specific row still override with mockResolvedValue.
+      findFirst: jest.fn(async ({ where }: any) => {
+        const row = incidents[where?.id];
+        if (!row) return null;
+        if (where.companyId && row.companyId !== where.companyId) return null;
+        return { ...row };
+      }),
+      // Honours the compare-and-set that `decide` now uses. A conditional write
+      // that does not match claims nothing — that is what makes a decision
+      // final under concurrency, so the mock has to model it rather than
+      // blindly applying every write.
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const row = incidents[where.id];
+        if (!row) return { count: 0 };
+        if (where.companyId && row.companyId !== where.companyId) return { count: 0 };
+        if (where.status && where.status.notIn && where.status.notIn.includes(row.status)) {
+          return { count: 0 };
+        }
+        Object.assign(row, data);
+        return { count: 1 };
+      }),
+      findFirstOrThrow: jest.fn(async ({ where }: any) => {
+        const row = incidents[where.id];
+        if (!row) throw new Error('not found');
+        return { ...row };
+      }),
+    },
     tripDocument: { create: jest.fn(), findMany: jest.fn() },
+    __incidents: incidents,
   };
   const prisma: any = {
     withTenant: jest.fn(async (_c: string, fn: (client: any) => Promise<unknown>) => fn(tx)),
@@ -131,39 +163,56 @@ describe('SafetyIncidentService', () => {
   // ── the decision is final ─────────────────────────────────────────────────
 
   it('records who verified an incident', async () => {
-    tx.safetyIncident.findFirst.mockResolvedValue({ id: 'i-1', companyId: COMPANY, status: 'REPORTED' });
-    tx.safetyIncident.update.mockResolvedValue({
-      id: 'i-1', companyId: COMPANY, type: 'THEFT', severity: 'HIGH', status: 'VERIFIED',
-      reportedByDriverId: null, reportedByUserId: null, reportLat: 0, reportLng: 0,
-      locationSource: 'GPS', geohash6: null, narrative: null,
-      verifiedByUserId: 'u-1', verifiedAt: new Date(), rejectedByUserId: null,
-      rejectedAt: null, rejectionReason: null, zoneId: null, broadcastCount: 0,
-      reportedAt: new Date(), createdAt: new Date(), updatedAt: new Date(),
-    });
+    tx.__incidents['i-1'] = { id: 'i-1', companyId: COMPANY, status: 'REPORTED' };
 
     await svc.decide(COMPANY, 'i-1', 'VERIFIED', undefined, dispatcher);
 
-    const data = tx.safetyIncident.update.mock.calls[0][0].data;
+    const data = tx.safetyIncident.updateMany.mock.calls[0][0].data;
     expect(data.status).toBe('VERIFIED');
     expect(data.verifiedByUserId).toBe('u-1');
   });
 
   it('refuses to re-decide, so the first decision is not erased', async () => {
-    tx.safetyIncident.findFirst.mockResolvedValue({ id: 'i-1', companyId: COMPANY, status: 'VERIFIED' });
+    tx.__incidents['i-1'] = { id: 'i-1', companyId: COMPANY, status: 'VERIFIED' };
 
     await expect(
       svc.decide(COMPANY, 'i-1', 'REJECTED', 'changed my mind', dispatcher),
     ).rejects.toBeInstanceOf(BadRequestException);
 
-    expect(tx.safetyIncident.update).not.toHaveBeenCalled();
+    // It tried, and the conditional write matched nothing — so the original
+    // decision is still the one on the record.
+    expect(tx.safetyIncident.updateMany).toHaveBeenCalled();
+    expect(tx.__incidents['i-1'].status).toBe('VERIFIED');
+  });
+
+  it('lets exactly one of two concurrent decisions win', async () => {
+    // THE RACE. Both callers see an OPEN incident; a read-then-write lets both
+    // proceed and the second erases who made the first call. The whole point of
+    // this table is preserving that, so the claim has to be conditional.
+    tx.__incidents['i-1'] = { id: 'i-1', companyId: COMPANY, status: 'REPORTED' };
+
+    const settled = await Promise.allSettled([
+      svc.decide(COMPANY, 'i-1', 'VERIFIED', undefined, dispatcher),
+      svc.decide(COMPANY, 'i-1', 'REJECTED', 'changed my mind', { id: 'u-2' }),
+    ]);
+
+    expect(settled.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(settled.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    // The FIRST decision is the one that survives.
+    expect(tx.__incidents['i-1'].status).toBe('VERIFIED');
+    expect(tx.__incidents['i-1'].verifiedByUserId).toBe('u-1');
   });
 
   it('will not decide another tenant\'s incident', async () => {
-    tx.safetyIncident.findFirst.mockResolvedValue(null);
+    // No row under 'i-other' at all.
     await expect(
       svc.decide(COMPANY, 'i-other', 'VERIFIED', undefined, dispatcher),
     ).rejects.toBeInstanceOf(NotFoundException);
-    expect(tx.safetyIncident.findFirst.mock.calls[0][0].where).toEqual({ id: 'i-other', companyId: COMPANY });
+    // The claim itself is tenant-scoped, not just the read that follows it.
+    expect(tx.safetyIncident.updateMany.mock.calls[0][0].where).toMatchObject({
+      id: 'i-other',
+      companyId: COMPANY,
+    });
   });
 });
 

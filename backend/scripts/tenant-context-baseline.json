@@ -1,7 +1,7 @@
 {
   "_why": "Bare tenant operations per module, at the time this was recorded. The invariant enforced by --check is that the TOTAL may never rise. Re-record only when coverage has genuinely improved, and say how in the commit.",
   "recorded": "2026-11-14",
-  "total": 1293,
+  "total": 1288,
   "byModule": {
     "accounting": 42,
     "accounting-integrations": 20,
@@ -52,7 +52,7 @@
     "manifests": 8,
     "market-trends": 2,
     "notifications": 11,
-    "order-flow": 11,
+    "order-flow": 9,
     "process-control": 52,
     "product-master": 27,
     "push": 4,
@@ -69,7 +69,7 @@
     "tracking": 1,
     "trip-costs": 14,
     "users": 6,
-    "warehouse-management": 69,
+    "warehouse-management": 66,
     "waybills": 53,
     "webhooks": 1,
     "whatsapp": 10
