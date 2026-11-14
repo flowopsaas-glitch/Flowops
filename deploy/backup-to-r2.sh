@@ -121,9 +121,24 @@ fi
 if ! gzip -t "$LOCAL_FILE"; then
   die "gzip integrity check failed. Aborting."
 fi
-if ! zcat "$LOCAL_FILE" | head -c 4096 | grep -q "PostgreSQL database dump"; then
-  die "dump does not look like a pg_dump file. Aborting."
-fi
+# This check must NOT be written as `zcat … | head -c 4096 | grep -q …`.
+#
+# `head` exits after 4096 bytes, so `zcat` is killed by SIGPIPE (141), and under
+# `set -o pipefail` that makes the whole pipeline non-zero — which the old `if`
+# then reported as "dump does not look like a pg_dump file". The dump was fine;
+# the check was broken, and it said the opposite of the truth. On 2026-11-14 a
+# healthy 376KB dump was rejected with that message.
+#
+# Nobody caught it because the script shipped without the executable bit (see
+# the commit that fixed its mode), so no run ever reached this line before.
+#
+# Capturing the head of the dump into a variable keeps the early SIGPIPE from
+# being read as a verdict. The pattern match below is what actually decides.
+DUMP_HEADER="$( { zcat "$LOCAL_FILE" | head -c 4096; } 2>/dev/null || true )"
+case "$DUMP_HEADER" in
+  *"PostgreSQL database dump"*) ;;
+  *) die "dump does not look like a pg_dump file. Aborting." ;;
+esac
 log "Verification passed (valid gzip + pg_dump header)."
 
 # ── 3. Upload to R2 ──────────────────────────────────────────────────────────

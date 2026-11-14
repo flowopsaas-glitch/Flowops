@@ -75,6 +75,19 @@ jobs:
           chmod +x deploy/host-patch.sh deploy/host-patch.test.sh
           ./deploy/host-patch.test.sh
 
+      # Off-box backup. This is the only restore point that survives losing the
+      # VPS, so its verification is pinned with docker and rclone stubbed: a
+      # healthy dump must reach the upload, and a malformed one must not be
+      # uploaded at all. The header of deploy/backup-to-r2.test.sh records why
+      # — a `set -o pipefail` + SIGPIPE interaction made it reject good
+      # backups while reporting that the backup was at fault, and it only
+      # misbehaved on dumps larger than the pipe buffer, so no small test
+      # would ever have caught it.
+      - name: Off-box backup logic (mocked docker/rclone)
+        run: |
+          chmod +x deploy/backup-to-r2.sh deploy/backup-to-r2.test.sh
+          ./deploy/backup-to-r2.test.sh
+
       # GitHub validates the YAML of a workflow but not the bash inside a
       # `run:` block. A syntax error there is invisible until a whole run is
       # spent discovering it — and on a private repo those runs are billed.
