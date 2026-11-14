@@ -1092,26 +1092,71 @@ export class InvoicesService {
       );
     }
 
-    // Create an audit-trail payment record
-    await this.prisma.payment.create({
-      data: {
-        reference: `MANUAL-${Date.now()}-${id.slice(-6)}`,
-        status: 'SUCCESS',
-        amount,
-        currency: 'ZAR',
-        description: dto.note ?? 'Manual payment approval',
-        invoiceId: id,
-        paystackChannel: 'manual',
-        customerName: dto.paidBy,
-        paidAt: new Date(),
-        companyId,
-      },
-    });
+    // TWO DEFECTS FIXED HERE.
+    //
+    //   1. NOT ATOMIC. The Payment row was created first and the invoice
+    //      updated second, with no transaction between them. If the second
+    //      write failed, the invoice stayed unpaid while a SUCCESS payment sat
+    //      against it — money recorded, invoice untouched, and nothing to
+    //      reconcile against. The invoice is the ledger; it must win or lose
+    //      together with the payment that evidences it.
+    //
+    //   2. NOT COMPARE-AND-SET. `inv.status === 'PAID'` was a READ, taken
+    //      earlier in this method. Two concurrent approvals both read a
+    //      non-PAID invoice and both proceeded, creating two Payment rows for
+    //      one invoice — which double-counts the money in the audit trail.
+    //      The claim has to happen at the write, not in a variable.
+    //
+    // Ordering matters: claim the invoice FIRST, and only create the payment
+    // if this caller actually won the claim. Creating the payment first and
+    // then discovering someone else got there is the bug in reverse.
+    return this.prisma.withTenant(companyId, async (tx) => {
+      const claimed = await tx.invoice.updateMany({
+        where: {
+          id,
+          companyId,
+          // CANCELLED is excluded deliberately: money arriving for a cancelled
+          // invoice must not quietly resurrect it. It needs a human.
+          status: { notIn: ['PAID', 'CANCELLED'] },
+        },
+        data: { status: 'PAID', paidAt: new Date() },
+      });
 
-    return this.prisma.invoice.update({
-      where: { id },
-      data: { status: 'PAID', paidAt: new Date() },
-      include: { items: true, payments: true },
+      if (claimed.count === 0) {
+        // Either it is already PAID, or it is CANCELLED. Re-read to tell the
+        // two apart: one is a harmless repeat, the other needs an answer.
+        const current = await tx.invoice.findUnique({
+          where: { id },
+          select: { status: true },
+        });
+        if (current?.status === 'PAID') {
+          return this.findOne(id, companyId); // idempotent — already paid
+        }
+        throw new BadRequestException(
+          `Invoice is ${current?.status ?? 'unavailable'} and cannot be marked paid.`,
+        );
+      }
+
+      // This caller won the claim, so it is the one that records the money.
+      await tx.payment.create({
+        data: {
+          reference: `MANUAL-${Date.now()}-${id.slice(-6)}`,
+          status: 'SUCCESS',
+          amount,
+          currency: 'ZAR',
+          description: dto.note ?? 'Manual payment approval',
+          invoiceId: id,
+          paystackChannel: 'manual',
+          customerName: dto.paidBy,
+          paidAt: new Date(),
+          companyId,
+        },
+      });
+
+      return tx.invoice.findUniqueOrThrow({
+        where: { id },
+        include: { items: true, payments: true },
+      });
     });
   }
 

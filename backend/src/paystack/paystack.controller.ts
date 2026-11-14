@@ -38,8 +38,11 @@ export class PaystackController {
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
   @Get('verify/:reference')
   @ApiOperation({ summary: 'Verify a Paystack payment by reference' })
-  verifyPayment(@Param('reference') reference: string) {
-    return this.svc.verifyPayment(reference);
+  verifyPayment(@CurrentUser() u: any, @Param('reference') reference: string) {
+    // companyId is threaded deliberately: `reference` is globally @unique, so
+    // without it a COMPANY_ADMIN could verify (and mutate) another tenant's
+    // payment and flip that tenant's invoice to PAID.
+    return this.svc.verifyPayment(reference, u.companyId);
   }
 
   @Roles(UserRole.ADMIN, UserRole.COMPANY_ADMIN)
