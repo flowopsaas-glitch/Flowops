@@ -74,15 +74,28 @@ function trackedShellScripts() {
     });
 }
 
-/** True when the file declares an interpreter, i.e. is asking to be run. */
+/**
+ * True when the file declares an interpreter, i.e. is asking to be run.
+ *
+ * A read failure is re-thrown rather than swallowed. Returning `false` would
+ * assert "this file does not ask to be run", so an unreadable script would be
+ * filtered out of the check above and escape the ratchet entirely — the exact
+ * failure this file exists to prevent, and one that reads as a pass to anyone
+ * who does not know to look for it. An unreadable tracked file is a problem
+ * worth failing the build over, not a case worth skipping.
+ */
 function asksToBeRun(relPath) {
+  let contents;
   try {
-    return readFileSync(resolve(REPO_ROOT, relPath), 'utf8').slice(0, 2) === '#!';
-  } catch {
-    // A tracked file that cannot be read is not this test's problem; the
-    // mode test below would only produce a confusing failure for it.
-    return false;
+    contents = readFileSync(resolve(REPO_ROOT, relPath), 'utf8');
+  } catch (err) {
+    throw new Error(
+      `Could not read tracked shell script "${relPath}", so the executable-bit ` +
+        `check cannot decide it. Skipping it would let a broken script escape ` +
+        `the ratchet.\n  cause: ${err.message}`,
+    );
   }
+  return contents.slice(0, 2) === '#!';
 }
 
 test('every shell script with a shebang is executable in the index', () => {
@@ -112,5 +125,28 @@ test('the glob actually matched something', () => {
     scripts.some((f) => f.mode === EXECUTABLE && asksToBeRun(f.path)),
     'Found no executable shell scripts — the check above could pass on an ' +
       'empty or mis-scoped result.',
+  );
+});
+
+test('the check covers deploy/, not just the repo root', () => {
+  // The "something matched" test above is too weak on its own. If the `*.sh`
+  // pathspec ever narrowed to top-level only, the three root-level scripts
+  // (deploy.sh, setup.sh, flowops-dev.sh) would still satisfy it — while every
+  // deploy/*.sh silently dropped out of scope. The ratchet would keep passing
+  // and cover none of the scripts it exists to protect, which is the incident
+  // that prompted it: deploy/backup-to-r2.sh and deploy/restore-verify.sh.
+  const deployScripts = trackedShellScripts().filter((f) =>
+    f.path.startsWith('deploy/'),
+  );
+
+  assert.ok(
+    deployScripts.length > 0,
+    'git ls-files found no scripts under deploy/ — the executable-bit check ' +
+      'does not cover the deployment scripts it was written for.',
+  );
+  assert.ok(
+    deployScripts.some((f) => asksToBeRun(f.path)),
+    'No deploy/ script declares a shebang — the deploy/ coverage assertion ' +
+      'is vacuous.',
   );
 });
