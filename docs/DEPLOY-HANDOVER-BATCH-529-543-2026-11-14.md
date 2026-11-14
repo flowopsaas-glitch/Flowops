@@ -1,4 +1,4 @@
-# Deploy handover — batch #531–#543 (2026-11-14)
+# Deploy handover — batch #529–#543 (2026-11-14)
 
 **For:** the platform operator (the only person who touches the VPS).
 **From:** the repository. Nothing below was executed against production; every
@@ -24,6 +24,10 @@ printf '%s' "$KEY" | base64 -d 2>/dev/null | wc -c   # must print 32
 git status --short                                    # must print nothing
 git log --oneline -1                                  # RECORD THIS
 
+# Row count for the #530 backfill (see 2.4)
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml \
+  exec -T postgres psql -U flowops -d flowops -c "SELECT count(*) FROM booking_requests;"
+
 # Back up
 ./deploy/backup-to-r2.sh
 
@@ -45,35 +49,68 @@ If it stops anywhere, go to section 8.
 
 ## 1. What is actually being deployed
 
-13 merged PRs: **#531 → #543**. All merged 2026-11-13.
+15 merged PRs: **#529 → #543**. Merged 2026-11-12 → 2026-11-13.
 
 | | |
 |---|---|
-| Prisma migrations | **1** |
+| Prisma migrations | **2** |
 | `deploy/` changes | **0** |
 | `docker-compose*` changes | **0** |
 | `.env*` template changes | **0** |
 | Everything else | application code + tests |
 
-### The one migration
+### The two migrations
 
-`backend/prisma/migrations/20261116090000_manifest_waybill_scan_record/migration.sql`
+Two of the fifteen PRs touch the schema. **They are not the same class of
+change**, and only one of them needs a number checked before you start.
 
-It is a single statement:
+#### `20261115090000_booking_requests_tenant_scope` (#530) — check this one
+
+This one is **not** purely additive. In order, it:
+
+1. adds a nullable `companyId` to `booking_requests`;
+2. **backfills it** from the parent `booking_portal_links` row (`UPDATE … FROM`);
+3. raises an exception if any row fails to backfill;
+4. sets the column `NOT NULL`;
+5. adds a foreign key to `companies` (`ON DELETE CASCADE`);
+6. enables and forces RLS with a `tenant_isolation` policy;
+7. creates three indexes.
+
+Steps 2, 4 and 5 rewrite and revalidate every row, and step 7 builds three
+indexes. `prisma migrate deploy` runs each migration inside a transaction, so
+the locks are held until it commits.
+
+**It is very likely empty.** The migration's own header notes the Prisma model
+had zero references across `src/`, so nothing ever wrote to it, and a request
+cannot outlive its link (`ON DELETE CASCADE`). On an empty table the backfill is
+a no-op and the whole thing takes milliseconds.
+
+"Very likely" is not "checked" — see section 2.4.
+
+#### `20261116090000_manifest_waybill_scan_record` (#537) — additive
+
+A single statement:
 
 ```sql
 ALTER TABLE "manifest_waybills" ADD COLUMN "scannedAt" TIMESTAMP(3);
 ```
 
 Additive, nullable, no default, no backfill, no table rewrite, no constraint
-existing rows could violate. It cannot fail on data, and it locks the table only
-briefly (a nullable column with no default is a catalog-only change on PG 11+).
-This is the safest class of migration there is, and it is the only schema change
-in the batch.
+existing rows could violate. A nullable column with no default is a catalog-only
+change on PG 11+ — it cannot fail on data and locks only briefly. The safest
+class of migration there is.
+
+#### A note on the RLS in #530
+
+Step 6 enables row-level security on `booking_requests`, but **the app connects
+as a superuser, and PostgreSQL exempts superusers from RLS entirely** — not even
+`FORCE` binds them. So this step is inert in production today. It starts to
+matter only after the role split in section 6. Nothing to do now; worth knowing
+so a future "RLS is on" reading is not mistaken for protection.
 
 **Consequence: this batch needs no new environment variables, no compose edits,
 and no configuration work.** If the deploy fails, it will be for a reason that
-predates this batch — most likely one of the three in section 2.
+predates this batch — most likely one of the four in section 2.
 
 ### What is *not* in this deploy: the RLS role split (#536)
 
@@ -93,7 +130,7 @@ this batch changes `DATABASE_URL`.
 2. If the site goes down after this deploy, you want exactly one candidate
    cause. Two changes means two things to bisect while the site is dark.
 
-Ship #531–#543 first, confirm green, then do the role split as its own change
+Ship #529–#543 first, confirm green, then do the role split as its own change
 window with its own rollback. See section 6.
 
 ---
@@ -181,6 +218,24 @@ git log --oneline -1
 `git status` must be empty. **Record the commit it prints** — that is your
 rollback target and your "what was live before" marker.
 
+### 2.4 Row count for the #530 backfill
+
+Not a blocker — a sizing question. The #530 migration backfills and rewrites
+`booking_requests`, which is instant on an empty table and a lock window on a
+populated one. Check before you deploy, not after:
+
+```bash
+grep -E '^POSTGRES_(USER|DB)=' .env   # empty means the defaults flowops/flowops apply
+docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml exec -T postgres \
+  psql -U flowops -d flowops -c "SELECT count(*) FROM booking_requests;"
+```
+
+Substitute the user and database if that `grep` printed anything.
+
+- **0** — proceed exactly as planned; the backfill is a no-op.
+- **anything else** — stop and report the number. The migration still applies,
+  but you want to know the lock window before taking it in business hours.
+
 ---
 
 ## 3. Back up first
@@ -244,23 +299,30 @@ Watch for these specific points:
 ```bash
 COMPOSE="docker compose -f docker-compose.yml -f deploy/docker-compose.vps.yml"
 
-# 1. The migration applied and is recorded as applied.
+# 1. Both migrations applied and recorded. Expect 2 rows, both with a
+#    finished_at and no rolled_back_at.
 $COMPOSE exec -T postgres psql -U flowops -d flowops -c \
-  "SELECT migration_name, finished_at FROM _prisma_migrations
-    WHERE migration_name = '20261116090000_manifest_waybill_scan_record';"
+  "SELECT migration_name, finished_at, rolled_back_at FROM _prisma_migrations
+    WHERE migration_name IN ('20261115090000_booking_requests_tenant_scope',
+                             '20261116090000_manifest_waybill_scan_record')
+    ORDER BY migration_name;"
 
-# 2. The column exists and is nullable.
+# 2. The #530 backfill left no NULL tenant.
+$COMPOSE exec -T postgres psql -U flowops -d flowops -c \
+  "SELECT count(*) AS null_tenant FROM booking_requests WHERE \"companyId\" IS NULL;"
+
+# 3. The new column exists and is nullable.
 $COMPOSE exec -T postgres psql -U flowops -d flowops -c \
   "SELECT column_name, is_nullable, data_type FROM information_schema.columns
     WHERE table_name='manifest_waybills' AND column_name='scannedAt';"
 
-# 3. The frontend is serving this build, not the previous bundle.
+# 4. The frontend is serving this build, not the previous bundle.
 ./deploy/post-deploy-check.sh
 
-# 4. No container publishes a port on 0.0.0.0 (tunnel-only design).
+# 5. No container publishes a port on 0.0.0.0 (tunnel-only design).
 docker ps --format '{{.Names}}\t{{.Ports}}' | grep '0\.0\.0\.0:' && echo LEAK || echo "no leak"
 
-# 5. API health.
+# 6. API health.
 $COMPOSE exec -T api wget -qO- http://localhost:3000/health
 ```
 
@@ -271,7 +333,7 @@ nothing reports which commit is running. So "is the new code live?" cannot be
 answered directly — it has to be inferred from the migration row, the git
 revision on disk, and `post-deploy-check.sh` for the frontend bundle.
 
-That is adequate for this batch (one additive migration plus a bundle check is
+That is adequate for this batch (two migration rows plus a bundle check is
 reasonably strong evidence), but it is worth closing: a `/health` payload
 carrying the commit sha would let you confirm a deploy at a glance. Flagging it
 rather than fixing it here — it is a code change, and code changes do not belong
@@ -402,14 +464,17 @@ as it was.
 
 | | |
 |---|---|
-| PRs | #531 → #543 (13), merged 2026-11-13 |
-| Migrations | 1, additive nullable column |
+| PRs | #529 → #543 (15), merged 2026-11-12 → 2026-11-13 |
+| Migrations | 2 — one additive column, one backfill + rewrite |
 | Env / compose changes | none |
 | Expected downtime | brief, on `up -d` (single container restart) |
 | Biggest risk | a pre-existing `.env` gap (2.1, 2.2), not this batch |
+| The one number to check | row count of `booking_requests` (2.4) |
 | Deliberately excluded | the RLS role split from #536 |
 
-The batch is unusually low-risk: one nullable column and twelve PRs of
-application logic that is covered by tests (`release:safety` was 222/222 on the
-tip before merge). The things most likely to stop you are host conditions that
-have been waiting for a deploy to surface them.
+The batch is low-risk, with one caveat: #530's migration backfills and rewrites
+`booking_requests` rather than only adding a column. It is almost certainly an
+empty table, and section 2.4 turns "almost certainly" into a number. Everything
+else is application logic covered by tests (`release:safety` was 222/222 on the
+tip before merge), so the things most likely to stop you are host conditions
+that have been waiting for a deploy to surface them.
