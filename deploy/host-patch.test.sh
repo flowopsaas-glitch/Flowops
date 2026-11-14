@@ -387,8 +387,11 @@ grep -q 'ExecStart=/usr/local/bin/flowops-host-patch --check' "$REPO_ROOT/deploy
   && ok "audit unit runs --check" || no "audit unit runs the wrong mode"
 grep -q 'ExecStart=/usr/local/bin/flowops-host-patch --full' "$REPO_ROOT/deploy/systemd/flowops-host-patch.service" \
   && ok "patch unit runs --full" || no "patch unit runs the wrong mode"
+# The off-box backup now runs at :15 every hour, so a monthly 03:30 patch window
+# always lands 15 minutes after a backup attempt rather than depending on a single
+# daily 02:15 job that would leave the newest snapshot a full day old if it failed.
 grep -q 'OnCalendar=\*-\*-01 03:30:00' "$REPO_ROOT/deploy/systemd/flowops-host-patch.timer" \
-  && ok "patch timer is monthly at 03:30 (after the 02:15 off-box backup)" || no "patch timer schedule changed"
+  && ok "patch timer is monthly at 03:30 (15 min after the hourly off-box backup)" || no "patch timer schedule changed"
 grep -q 'Persistent=true' "$REPO_ROOT/deploy/systemd/flowops-host-patch.timer" \
   && ok "patch timer catches up after downtime" || no "Persistent=true missing (a rebooted host would skip its window)"
 

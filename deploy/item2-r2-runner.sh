@@ -18,6 +18,20 @@ readonly CRON_MARKER="FLOWOPS_ITEM2_R2"
 readonly RCLONE_CONFIG_PATH="/root/.config/rclone/rclone.conf"
 readonly RCLONE_BIN="/usr/local/bin/rclone"
 readonly MIN_DUMP_BYTES=10240
+# Off-box upload cadence. The backup container dumps every 6h on a `sleep 21600`
+# loop that starts when the CONTAINER starts, so dump times drift by up to 6h
+# whenever it restarts. A wall-clock schedule aligned to the current dump times
+# would therefore silently degrade: a 6-hourly cron that happens to fire just
+# before each dump ships a snapshot up to ~12h old instead of ~6h, and nothing
+# fails while it does. Uploading hourly makes the guarantee alignment-independent:
+# the newest dump is always <=6h old, and the cron lags it by at most 1h, so the
+# worst-case snapshot age is bounded at ~7h no matter when the container restarted.
+# Cost is flat because remote_dump_present() skips the upload when R2 already
+# holds this exact dump -- only 4 new objects land per day, one per dump.
+readonly BACKUP_CRON_SCHEDULE="15 * * * *"
+readonly RESTORE_PROOF_CRON_SCHEDULE="0 3 * * 0"
+readonly BACKUP_LOG="/var/log/flowops-backup.log"
+readonly RESTORE_PROOF_LOG="/var/log/flowops-restore-verify.log"
 
 MODE="${1:-setup}"
 [[ "$#" -le 1 ]] || { echo "Usage: $0 [--backup-only|--verify-local]" >&2; exit 2; }
@@ -206,6 +220,21 @@ verify_restore_and_count() {
   VERIFY_DB=""
 }
 
+# True only when R2 already holds this exact object at the same byte size.
+# Lets an hourly cron re-run cheaply: the common case is "no new dump yet", and
+# that costs one metadata read instead of an upload plus a round-trip download.
+# Size is sufficient as an identity check because the object name already encodes
+# the dump's own timestamp, so a same-named object IS the same dump.
+remote_dump_present() {
+  local destination="$1" local_file="$2" local_size remote_size
+  local_size="$(stat -c%s "$local_file" 2>/dev/null || echo 0)"
+  [[ "$local_size" =~ ^[0-9]+$ && "$local_size" -gt 0 ]] || return 1
+  remote_size="$(RCLONE_CONFIG="$RCLONE_CONFIG_PATH" RCLONE_S3_NO_CHECK_BUCKET=true \
+    "$RCLONE_BIN" ls "$destination" 2>/dev/null | awk 'NR==1 {print $1; exit}')"
+  [[ "$remote_size" =~ ^[0-9]+$ ]] || return 1
+  [[ "$remote_size" == "$local_size" ]]
+}
+
 upload_and_roundtrip() {
   local local_file="$1" destination="$2" roundtrip="$3" digest_local digest_remote
   RCLONE_CONFIG="$RCLONE_CONFIG_PATH" RCLONE_S3_NO_CHECK_BUCKET=true "$RCLONE_BIN" copyto "$local_file" "$destination" --quiet || die "R2 upload failed."
@@ -229,8 +258,12 @@ backup_latest() {
   year="${LATEST_DUMP_NAME:8:4}"
   month="${LATEST_DUMP_NAME:12:2}"
   R2_OBJECT="${R2_REMOTE}:${R2_BUCKET}/${R2_PREFIX}/${year}/${month}/${LATEST_DUMP_NAME}"
-  log "Uploading verified local dump to ${R2_REMOTE}:${R2_BUCKET}/${R2_PREFIX}/${year}/${month}/ (object name ${LATEST_DUMP_NAME})."
-  upload_and_roundtrip "$local_file" "$R2_OBJECT" "$roundtrip"
+  if remote_dump_present "$R2_OBJECT" "$local_file"; then
+    log "R2 already holds ${LATEST_DUMP_NAME} at the same size; no new dump to ship this cycle."
+  else
+    log "Uploading verified local dump to ${R2_REMOTE}:${R2_BUCKET}/${R2_PREFIX}/${year}/${month}/ (object name ${LATEST_DUMP_NAME})."
+    upload_and_roundtrip "$local_file" "$R2_OBJECT" "$roundtrip"
+  fi
   RCLONE_CONFIG="$RCLONE_CONFIG_PATH" RCLONE_S3_NO_CHECK_BUCKET=true "$RCLONE_BIN" delete "${R2_REMOTE}:${R2_BUCKET}/${R2_PREFIX}" --min-age "${RETENTION_DAYS}d" --quiet || \
     die "backup and round-trip succeeded, but 30-day retention pruning failed; inspect R2 before retrying."
   log "Backup job complete; objects older than ${RETENTION_DAYS} days pruned only under ${R2_BUCKET}/${R2_PREFIX}/."
@@ -278,15 +311,15 @@ setup_first_backup_and_proofs() {
   current_cron="$(crontab -l 2>/dev/null || true)"
   cron_tmp="${TMP_DIR}/crontab.new"
   printf '%s\n' "$current_cron" | grep -v "$CRON_MARKER" > "$cron_tmp" || true
-  printf '%s\n' '15 2 * * * /usr/local/bin/flowops-backup-r2 --backup-only >> /var/log/flowops-backup.log 2>&1 # FLOWOPS_ITEM2_R2_BACKUP' >> "$cron_tmp"
-  printf '%s\n' '0 3 * * 0 /usr/local/bin/flowops-backup-r2 --verify-local >> /var/log/flowops-restore-verify.log 2>&1 # FLOWOPS_ITEM2_R2_RESTORE' >> "$cron_tmp"
+  printf '%s\n' "${BACKUP_CRON_SCHEDULE} ${INSTALL_PATH} --backup-only >> ${BACKUP_LOG} 2>&1 # ${CRON_MARKER}_BACKUP" >> "$cron_tmp"
+  printf '%s\n' "${RESTORE_PROOF_CRON_SCHEDULE} ${INSTALL_PATH} --verify-local >> ${RESTORE_PROOF_LOG} 2>&1 # ${CRON_MARKER}_RESTORE" >> "$cron_tmp"
   if [[ ! -e /root/item2-crontab.before-r2 ]]; then
     crontab -l > /root/item2-crontab.before-r2 2>/dev/null || : > /root/item2-crontab.before-r2
     chmod 0600 /root/item2-crontab.before-r2
   fi
   crontab "$cron_tmp"
   rm -f -- "$cron_tmp"
-  log "Step 5/5: root cron now runs daily R2 backup at 02:15 and local restore proof Sundays at 03:00."
+  log "Step 5/5: root cron now runs the R2 backup hourly ('${BACKUP_CRON_SCHEDULE}', uploading each new 6-hourly dump) and the local restore proof '${RESTORE_PROOF_CRON_SCHEDULE}'."
   printf 'VERIFY PASSED: local dump restore; %s\n' "$local_counts"
   printf 'VERIFY PASSED: offsite R2 round-trip restore; %s\n' "$offsite_counts"
 }

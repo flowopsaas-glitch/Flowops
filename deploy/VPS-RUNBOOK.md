@@ -337,10 +337,26 @@ Verified live state after the 2026-09-30 rollout (and the A.5 rotation recorded 
 - Rclone remote: `flowops-r2` (config `/root/.config/rclone/rclone.conf`, mode 600)
 - R2 bucket: `flowops-backups`, prefix `backups/`; public access disabled
 - Root cron:
-  - `15 2 * * *` daily R2 backup → `/var/log/flowops-backup.log`
+  - `15 * * * *` hourly R2 backup → `/var/log/flowops-backup.log`
   - `0 3 * * 0` local restore proof → `/var/log/flowops-restore-verify.log`
-- First successful proof counts (local and R2 round-trip identical):
-  collections=19, companies=2, drivers=20, users=10, waybills=81.
+- **Why the upload is hourly when dumps are only 6-hourly.** The backup
+  container dumps on a `sleep 21600` loop that starts when the *container*
+  starts, so dump times drift by up to 6 hours every time it restarts. A cron
+  schedule aligned to today's dump times would therefore silently degrade after
+  a restart: a 6-hourly cron that lands just before each dump ships a snapshot
+  up to ~12 h old instead of ~6 h, and nothing fails while it does. Uploading
+  hourly makes the guarantee independent of that drift — the newest dump is
+  always ≤6 h old and cron lags it by at most 1 h, bounding the worst case at
+  ~7 h. It costs nothing extra because the runner skips any dump R2 already
+  holds, so only 4 new objects land per day, one per dump.
+- **Worst-case RPO, measured not assumed:**
+  | Failure | Worst-case data loss |
+  | --- | --- |
+  | VPS lost (disk/host/provider) — off-box R2 snapshot | **~7 h** |
+  | Logical corruption, box healthy — local dumps, 6-hourly, 7 days retained | **~6 h** |
+- Retention: R2 keeps 30 days; the container keeps 28 files (~7 days) locally.
+- Proof counts from the most recent verified run (local and R2 round-trip identical):
+  collections=33, companies=2, drivers=20, users=10, waybills=81.
 
 **To rotate / reconfigure rclone credentials**, use `rclone config` as root
 and edit only the `flowops-r2` remote; never paste keys into chat. If cron or
@@ -360,8 +376,8 @@ burned. The rotation removed all of that; the evidence, all measured on the VPS:
 | Credential **cannot** list buckets | `rclone lsf flowops-r2:` | `403 AccessDenied` on `ListBuckets`, exit 1 — proof the token is scoped to one bucket, not the account |
 | Read/write inside the bucket | `copyto` → `cat` → `deletefile` of `_probe-nc.txt` | write, read-back and delete all succeed; bucket left unchanged |
 | Config permissions | `stat -c '%a %U' /root/.config/rclone/rclone.conf` | `600 root` |
-| Scheduling intact | `crontab -l` | `15 2 * * *` backup, `0 3 * * 0` restore proof, both still marked `FLOWOPS_ITEM2_R2_*` |
-| Installed runner | `sha256sum /usr/local/bin/flowops-backup-r2` | `d9b84bd071172314ef0d81f0a1eaa7b75493bcbf531fa031f1eae9b2e91b6927` — byte-identical to `deploy/item2-r2-runner.sh` in this repo (verified 2026-09-30); mode `-rwxr-x--- root root`, 16222 bytes |
+| Scheduling intact | `crontab -l` | `15 * * * *` backup, `0 3 * * 0` restore proof, both still marked `FLOWOPS_ITEM2_R2_*` |
+| Installed runner | `sha256sum /usr/local/bin/flowops-backup-r2` | Re-measure after every reinstall — the value recorded here on 2026-09-30 (`d9b84bd…`, 16222 bytes) went stale the next time the script changed, and a stale hash is worse than none because it invites a false all-clear. As of the hourly-schedule change: `5115f668cc17c7256d9b1adef34415ffa7fbc3faf5f03c841905c3493a580902`, 18305 bytes, mode `-rwxr-x--- root root`. Install with `install -o root -g root -m 0750` so the mode matches |
 | The real job works with the new key | `/usr/local/bin/flowops-backup-r2 --backup-only` | preflight, upload, R2 round-trip (gzip + SHA-256) and 30-day prune all completed |
 
 A token that cannot call `ListBuckets` cannot enumerate or write to any other bucket.
