@@ -1,4 +1,9 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
 import axios from 'axios';
@@ -96,7 +101,36 @@ export class PaystackService {
 
   // ── Verify payment ────────────────────────────────────────────────────
 
-  async verifyPayment(reference: string) {
+  /**
+   * Verify a payment and, on success, mark it and its linked invoice paid.
+   *
+   * THREE DEFECTS FIXED HERE. The webhook path (`handleChargeSuccess`) already
+   * handled two of them; only this HTTP path did not, which is why the bug
+   * survived review — the idempotency logic existed in the file, two hundred
+   * lines away, and looked like it covered the feature.
+   *
+   *   1. NO TENANT SCOPE. This took only `reference` and filtered on it alone.
+   *      `reference` is @unique, so it always resolves to exactly one row —
+   *      just not necessarily the caller's. A COMPANY_ADMIN could verify a
+   *      payment belonging to another tenant and flip THAT tenant's invoice to
+   *      PAID. Every sibling method here threads `u.companyId`
+   *      (`initializePayment` writes it, `getPayments` filters on it); this one
+   *      did not. `companyId` is REQUIRED, not optional: an optional tenant
+   *      filter is one somebody forgets to pass, and the failure is silent.
+   *
+   *   2. NOT IDEMPOTENT. Every call rewrote `paidAt: new Date()`. This is a GET
+   *      endpoint the browser hits on the Paystack callback, so repeat calls
+   *      are the normal case, and each one moved the recorded payment time
+   *      forward — turning "when the customer paid" into "when we last asked".
+   *      Disbursement aging reads `paidAt`, so the corruption reached reporting.
+   *      `handleChargeSuccess` skips when the payment is already SUCCESS; this
+   *      did not.
+   *
+   *   3. NO STATUS GUARD. The invoice was set to PAID unconditionally, so a
+   *      CANCELLED invoice could be resurrected by a late verification, and an
+   *      already-PAID one had its `paidAt` rewritten.
+   */
+  async verifyPayment(reference: string, companyId: string) {
     const { data } = await axios.get(
       `${PAYSTACK_BASE}/transaction/verify/${reference}`,
       { headers: this.headers },
@@ -108,23 +142,44 @@ export class PaystackService {
     const success = tx.status === 'success';
 
     if (success) {
-      await this.prisma.payment.updateMany({
-        where: { reference },
-        data: {
-          status: 'SUCCESS',
-          paystackReference: tx.reference,
-          paystackChannel: tx.channel,
-          customerEmail: tx.customer?.email,
-          customerName: tx.customer?.name,
-          paidAt: new Date(),
-        },
+      const payment = await this.prisma.payment.findFirst({
+        where: { reference, companyId },
+        select: { id: true, status: true, invoiceId: true, companyId: true },
       });
+      if (!payment) {
+        // Fail closed. A reference that does not belong to this company is
+        // indistinguishable here from one that does not exist, and answering
+        // "not found" leaks nothing either way.
+        throw new NotFoundException(
+          `No payment with reference ${reference} for this company.`,
+        );
+      }
 
-      // Mark invoice as paid if linked
-      const payment = await this.prisma.payment.findFirst({ where: { reference } });
-      if (payment?.invoiceId) {
-        await this.prisma.invoice.update({
-          where: { id: payment.invoiceId },
+      // Compare-and-set at the application level: an already-SUCCESS payment
+      // keeps its ORIGINAL paidAt instead of having it pushed forward.
+      if (payment.status !== 'SUCCESS') {
+        await this.prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: 'SUCCESS',
+            paystackReference: tx.reference,
+            paystackChannel: tx.channel,
+            customerEmail: tx.customer?.email,
+            customerName: tx.customer?.name,
+            paidAt: new Date(),
+          },
+        });
+      }
+
+      // Mark the linked invoice paid — but never resurrect a CANCELLED one,
+      // and never rewrite paidAt on one that is already PAID.
+      if (payment.invoiceId) {
+        await this.prisma.invoice.updateMany({
+          where: {
+            id: payment.invoiceId,
+            companyId: payment.companyId,
+            status: { notIn: ['PAID', 'CANCELLED'] },
+          },
           data: { status: 'PAID', paidAt: new Date() },
         });
       }

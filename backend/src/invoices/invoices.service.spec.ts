@@ -14,6 +14,15 @@ import { BadRequestException } from '@nestjs/common';
  */
 
 function makePrisma(overrides: Record<string, unknown> = {}) {
+  // `markPaid` runs inside withTenant(), so its writes go through `tx`, not
+  // `prisma`. These three are SHARED between the two objects on purpose: the
+  // existing markPaid specs assert on `prisma.payment.create`, and sharing the
+  // mock means they keep testing the real call now that it has moved into the
+  // transaction, instead of being quietly re-pointed at a mock nothing calls.
+  const paymentCreate = jest.fn().mockResolvedValue({ id: 'pay1' });
+  const invoiceUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+  const invoiceFindUnique = jest.fn().mockResolvedValue({ id: 'inv1', status: 'PAID' });
+
   const tx = {
     $queryRaw: jest.fn((strings: TemplateStringsArray) =>
       Promise.resolve(strings[0].includes('pg_advisory_xact_lock') ? [] : [{ lastNumber: 0 }]),
@@ -22,6 +31,11 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
       count: jest.fn().mockResolvedValue(0),
       create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'inv1', ...data })),
       update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'inv1', ...data })),
+      updateMany: invoiceUpdateMany,
+      findUnique: invoiceFindUnique,
+      findUniqueOrThrow: jest
+        .fn()
+        .mockResolvedValue({ id: 'inv1', status: 'PAID', items: [], payments: [] }),
     },
     invoiceItem: {
       createMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -29,17 +43,19 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
     waybill: {
       findMany: jest.fn().mockResolvedValue([]),
     },
+    payment: { create: paymentCreate },
   };
   const prisma = {
     invoice: {
       count: jest.fn().mockResolvedValue(0),
       create: jest.fn(),
       update: jest.fn().mockResolvedValue({ id: 'inv1', status: 'PAID' }),
-      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      updateMany: invoiceUpdateMany,
+      findUnique: invoiceFindUnique,
       findFirst: jest.fn(),
     },
     payment: {
-      create: jest.fn().mockResolvedValue({ id: 'pay1' }),
+      create: paymentCreate,
     },
     notification: {
       create: jest.fn().mockResolvedValue({ id: 'notification-1' }),
@@ -256,6 +272,53 @@ describe('InvoicesService (financial integrity)', () => {
       await svc.markPaid('inv1', 'co1', {});
       const payArg = (prisma.payment.create as jest.Mock).mock.calls[0][0];
       expect(payArg.data.amount).toBe(1000);
+    });
+
+    it('records exactly ONE payment when two approvals race', async () => {
+      // THE COMPARE-AND-SET DEFECT. Both callers read a non-PAID invoice before
+      // either writes, so a read-time `status === 'PAID'` check clears both of
+      // them. Only the caller that WINS the claim may create the Payment —
+      // otherwise one invoice collects two payment rows and the audit trail
+      // double-counts the money.
+      prisma.__tx.invoice.updateMany
+        .mockResolvedValueOnce({ count: 1 }) // first caller wins
+        .mockResolvedValueOnce({ count: 0 }); // second finds it already PAID
+      prisma.__tx.invoice.findUnique.mockResolvedValue({ id: 'inv1', status: 'PAID' });
+
+      await Promise.all([
+        svc.markPaid('inv1', 'co1', { amount: 1000 }),
+        svc.markPaid('inv1', 'co1', { amount: 1000 }),
+      ]);
+
+      expect((prisma.payment.create as jest.Mock).mock.calls).toHaveLength(1);
+    });
+
+    it('refuses to mark a CANCELLED invoice paid', async () => {
+      // Money arriving for a cancelled invoice must not quietly resurrect it.
+      prisma.__tx.invoice.updateMany.mockResolvedValue({ count: 0 });
+      prisma.__tx.invoice.findUnique.mockResolvedValue({ id: 'inv1', status: 'CANCELLED' });
+
+      await expect(svc.markPaid('inv1', 'co1', { amount: 1000 })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(prisma.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent on a repeat approval and records no second payment', async () => {
+      prisma.__tx.invoice.updateMany.mockResolvedValue({ count: 0 });
+      prisma.__tx.invoice.findUnique.mockResolvedValue({ id: 'inv1', status: 'PAID' });
+
+      await svc.markPaid('inv1', 'co1', { amount: 1000 });
+
+      expect(prisma.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('scopes the claim to the company so one tenant cannot pay another invoice', async () => {
+      await svc.markPaid('inv1', 'co1', { amount: 1000 });
+
+      const where = (prisma.__tx.invoice.updateMany as jest.Mock).mock.calls[0][0].where;
+      expect(where.companyId).toBe('co1');
+      expect(where.id).toBe('inv1');
     });
   });
 });
