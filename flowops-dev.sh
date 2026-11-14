@@ -1,11 +1,21 @@
 #!/bin/bash
+#
 # FlowOps Dev Startup Script
-# Location: /opt/Flowops/flowops-dev.sh
 # Usage: ./flowops-dev.sh
+#
+# The checkout path is derived from this script's own location. It used to
+# hard-code /opt/Flowops, which no box in this project uses — every deploy
+# target is ~/FlowOps or /opt/flowops — so `cd "${REPO_ROOT}/backend" || { echo "ERROR: backend/ not found at ${REPO_ROOT}/backend"; exit 1; }`
+# exited 1 on the first line for anyone who ran it.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- Step 1: Kill any process using port 3000 ---
 echo "Checking for processes on port 3000..."
-PID=$(lsof -ti :3000)
+# `lsof` is not installed everywhere; a missing tool is not a reason to
+# abort a developer's morning.
+PID=$(lsof -ti :3000 2>/dev/null || true)
 if [ -n "$PID" ]; then
   echo "Found process $PID on port 3000. Killing it..."
   kill -9 $PID

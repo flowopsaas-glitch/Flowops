@@ -88,6 +88,17 @@ jobs:
           chmod +x deploy/backup-to-r2.sh deploy/backup-to-r2.test.sh
           ./deploy/backup-to-r2.test.sh
 
+      # Restore/verify — the disaster path. It runs for the first time on the
+      # worst day you have with this system, so its ORDERING is pinned here:
+      # --restore-live must prove the dump loads BEFORE it drops the live
+      # schema, and the live load must use ON_ERROR_STOP so a partial restore
+      # fails loudly instead of exiting 0. See the header of
+      # deploy/restore-verify.test.sh.
+      - name: Restore/verify logic (mocked docker)
+        run: |
+          chmod +x deploy/restore-verify.sh deploy/restore-verify.test.sh
+          ./deploy/restore-verify.test.sh
+
       # GitHub validates the YAML of a workflow but not the bash inside a
       # `run:` block. A syntax error there is invisible until a whole run is
       # spent discovering it — and on a private repo those runs are billed.
