@@ -28,11 +28,31 @@
 #   - aws: the R2 credentials + bucket from your .env (same ones the app uses)
 #   - rclone: `rclone listremotes` shows your R2 remote (no env needed)
 #
-# INSTALL (run once on the VPS, as root):
-#   sudo cp deploy/backup-to-r2.sh /usr/local/bin/flowops-backup-r2
-#   sudo chmod +x /usr/local/bin/flowops-backup-r2
-#   # add to root crontab — daily at 02:15:
-#   ( crontab -l 2>/dev/null; echo '15 2 * * * /usr/local/bin/flowops-backup-r2 >> /var/log/flowops-backup.log 2>&1' ) | crontab -
+# ─────────────────────────────────────────────────────────────────────────────
+# ⚠️  DO NOT INSTALL THIS SCRIPT AS /usr/local/bin/flowops-backup-r2.  ⚠️
+# ─────────────────────────────────────────────────────────────────────────────
+# That filename belongs to deploy/item2-r2-runner.sh, which is what actually
+# runs on the VPS and what owns the root crontab. This header used to recommend
+# `cp deploy/backup-to-r2.sh /usr/local/bin/flowops-backup-r2` followed by a
+# no-argument cron entry. Following it on 2026-11-14 overwrote the installed
+# runner and broke the off-box backup, because:
+#
+#   1. this script takes NO arguments, so the weekly job that should have run
+#      `--verify-local` ran a backup instead — the restore proof silently became
+#      a second backup, and still exited 0;
+#   2. the copy predated the SIGPIPE fix, so the run died with "dump does not
+#      look like a pg_dump file" on a perfectly healthy dump.
+#
+# The system reported success while doing the wrong job. Both scripts dump,
+# validate and upload to R2, so the overlap is easy to miss — but only the item2
+# runner is installed, scheduled, and covered by the restore proof.
+#
+# THIS SCRIPT IS A STANDALONE/AD-HOC TOOL. Use it for a one-off manual push:
+#   ./deploy/backup-to-r2.sh
+#
+# TO INSTALL OR REPAIR THE SCHEDULED BACKUP, use the item2 runner instead:
+#   install -o root -g root -m 0750 deploy/item2-r2-runner.sh /usr/local/bin/flowops-backup-r2
+# See deploy/VPS-RUNBOOK.md for the schedule and the verification steps.
 #
 # CONFIG knobs (all optional):
 #   R2_BACKUP_BUCKET   — bucket name (default: flowops-backups)

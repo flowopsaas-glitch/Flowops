@@ -99,6 +99,19 @@ jobs:
           chmod +x deploy/restore-verify.sh deploy/restore-verify.test.sh
           ./deploy/restore-verify.test.sh
 
+      # Backup SCHEDULE consistency. Unlike the two suites above this one is
+      # static, and deliberately so: it guards the seams BETWEEN files, which no
+      # amount of testing either file alone can close. On 2026-11-14 the docs
+      # described a different backup script than the one installed on the VPS;
+      # an operator followed the documented script, overwrote the installed
+      # binary and silently broke both jobs. Nothing failed, because nothing
+      # knew the two were supposed to agree. See the header of
+      # deploy/item2-r2-schedule.test.sh.
+      - name: Backup schedule consistency (runner vs runbook vs compose)
+        run: |
+          chmod +x deploy/item2-r2-schedule.test.sh
+          ./deploy/item2-r2-schedule.test.sh
+
       # GitHub validates the YAML of a workflow but not the bash inside a
       # `run:` block. A syntax error there is invisible until a whole run is
       # spent discovering it — and on a private repo those runs are billed.
